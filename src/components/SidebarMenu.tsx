@@ -4,8 +4,10 @@
  */
 
 import React from 'react';
-import { Play, Users, BookOpen, HelpCircle, Settings } from 'lucide-react';
+import { Play, Users, BookOpen, HelpCircle, Settings, Award, LogIn, UserCheck } from 'lucide-react';
 import { TitleLogo } from './TitleLogo';
+import { User } from 'firebase/auth';
+import { UserProfile } from '../types/game';
 
 interface SidebarMenuProps {
   onStartGame: () => void;
@@ -13,6 +15,10 @@ interface SidebarMenuProps {
   onOpenTeacher: () => void;
   onOpenRules: () => void;
   onOpenSettings: () => void;
+  onOpenStudentAuth?: () => void;
+  onOpenStudentResults?: () => void;
+  currentUser?: User | null;
+  userProfile?: UserProfile | null;
   isPlaying?: boolean;
 }
 
@@ -22,6 +28,10 @@ export const SidebarMenu: React.FC<SidebarMenuProps> = ({
   onOpenTeacher,
   onOpenRules,
   onOpenSettings,
+  onOpenStudentAuth,
+  onOpenStudentResults,
+  currentUser,
+  userProfile,
   isPlaying = false,
 }) => {
   return (
@@ -45,6 +55,56 @@ export const SidebarMenu: React.FC<SidebarMenuProps> = ({
             {isPlaying ? 'Lanjutkan Main' : 'Mulai Permainan'}
           </span>
         </button>
+
+        {/* Masuk Google Siswa / Akun Saya */}
+        {onOpenStudentAuth && (
+          <button
+            type="button"
+            onClick={onOpenStudentAuth}
+            className={`w-full p-2.5 sm:p-3 rounded-2xl font-black text-xs sm:text-sm font-['Fredoka'] border-2 shadow-[0_4px_0_0_#065f46,0_6px_12px_rgba(5,150,105,0.3)] hover:brightness-110 active:translate-y-1 transition-all flex items-center gap-3 cursor-pointer ${
+              currentUser
+                ? 'bg-gradient-to-r from-teal-600 via-emerald-600 to-teal-700 text-white border-teal-300'
+                : 'bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-700 text-white border-sky-300'
+            }`}
+          >
+            <span className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center shrink-0 overflow-hidden">
+              {currentUser?.photoURL ? (
+                <img src={currentUser.photoURL} alt="" className="w-full h-full object-cover" />
+              ) : currentUser ? (
+                <UserCheck className="w-4 h-4 text-emerald-100" />
+              ) : (
+                <LogIn className="w-4 h-4 text-sky-100" />
+              )}
+            </span>
+            <div className="flex flex-col text-left leading-tight truncate">
+              <span className="truncate">
+                {currentUser ? (userProfile?.customName || currentUser.displayName || 'Siswa Masuk') : 'Masuk Siswa (Google)'}
+              </span>
+              <span className="text-[10px] text-teal-100/90 font-bold font-['Nunito'] truncate">
+                {currentUser ? 'Akun Google Terhubung' : 'Simpan Nilai & Gabung Kelas'}
+              </span>
+            </div>
+          </button>
+        )}
+
+        {/* Hasil Pembelajaran Saya */}
+        {currentUser && onOpenStudentResults && (
+          <button
+            type="button"
+            onClick={onOpenStudentResults}
+            className="w-full p-2.5 sm:p-3 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white font-black text-xs sm:text-sm font-['Fredoka'] border-2 border-amber-200 shadow-[0_4px_0_0_#78350f,0_6px_12px_rgba(217,119,6,0.3)] hover:brightness-110 active:translate-y-1 transition-all flex items-center gap-3 cursor-pointer"
+          >
+            <span className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+              <Award className="w-4 h-4 text-amber-100" />
+            </span>
+            <div className="flex flex-col text-left leading-tight">
+              <span>Hasil Belajar Saya</span>
+              <span className="text-[10px] text-amber-100 font-bold font-['Nunito']">
+                Nilai & Ulasan Esai
+              </span>
+            </div>
+          </button>
+        )}
 
         {/* Atur Pemain */}
         <button
@@ -75,7 +135,7 @@ export const SidebarMenu: React.FC<SidebarMenuProps> = ({
           <div className="flex flex-col text-left leading-tight">
             <span>Mode Guru</span>
             <span className="text-[10px] text-emerald-200 font-bold font-['Nunito']">
-              (Kelola Soal)
+              (Kelola Soal & Kelas)
             </span>
           </div>
         </button>

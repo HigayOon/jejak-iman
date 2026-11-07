@@ -43,7 +43,17 @@ import { RulesModal } from './components/RulesModal';
 import { SettingsModal } from './components/SettingsModal';
 import { GameResult } from './components/GameResult';
 import { ScenicBackground } from './components/ScenicBackground';
-import { Volume2, VolumeX, Users, User, RotateCcw } from 'lucide-react';
+import { StudentAuthModal } from './components/StudentAuthModal';
+import { StudentResultsModal } from './components/StudentResultsModal';
+import { User } from 'firebase/auth';
+import { UserProfile } from './types/game';
+import {
+  subscribeToAuth,
+  getUserProfile,
+  syncUserProfile,
+  checkIsTeacher,
+} from './firebase/authService';
+import { Volume2, VolumeX, Users, User as UserIcon, RotateCcw } from 'lucide-react';
 
 const STORAGE_KEY = 'jejak_iman_game_save_v2';
 
@@ -136,6 +146,45 @@ export default function App() {
       bonusStarsOnQuestion: 0,
     };
   });
+
+  // Firebase Auth & User Profile state
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [isTeacherUser, setIsTeacherUser] = useState<boolean>(false);
+
+  // Subscribe to Firebase Auth changes
+  useEffect(() => {
+    const unsubscribe = subscribeToAuth(async (user) => {
+      setCurrentUser(user);
+      if (user) {
+        try {
+          const profile = await syncUserProfile(user);
+          setUserProfile(profile);
+          const teacher = await checkIsTeacher(user);
+          setIsTeacherUser(teacher);
+        } catch (err) {
+          console.error('Error syncing profile:', err);
+        }
+      } else {
+        setUserProfile(null);
+        setIsTeacherUser(false);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const refreshUserProfile = useCallback(async () => {
+    if (currentUser) {
+      try {
+        const profile = await getUserProfile(currentUser.uid);
+        if (profile) setUserProfile(profile);
+        const teacher = await checkIsTeacher(currentUser);
+        setIsTeacherUser(teacher);
+      } catch (err) {
+        console.error('Error refreshing profile:', err);
+      }
+    }
+  }, [currentUser]);
 
   // Persist game state on changes
   useEffect(() => {
@@ -476,9 +525,28 @@ export default function App() {
           onOpenTeacher={() => setActiveModal('teacher_pin')}
           onOpenRules={() => setActiveModal('rules')}
           onOpenSetup={() => setActiveModal('setup')}
+          onOpenStudentAuth={() => setActiveModal('student_auth')}
+          onOpenStudentResults={() => setActiveModal('student_results')}
+          currentUser={currentUser}
+          userProfile={userProfile}
         />
 
         {/* Modals when in menu */}
+        {activeModal === 'student_auth' && (
+          <StudentAuthModal
+            user={currentUser}
+            userProfile={userProfile}
+            onClose={() => setActiveModal('none')}
+            onOpenResults={() => setActiveModal('student_results')}
+            onRefreshProfile={refreshUserProfile}
+          />
+        )}
+        {activeModal === 'student_results' && currentUser && (
+          <StudentResultsModal
+            user={currentUser}
+            onClose={() => setActiveModal('none')}
+          />
+        )}
         {activeModal === 'teacher_pin' && (
           <TeacherPinModal
             onSuccess={() => setActiveModal('teacher')}
@@ -489,6 +557,7 @@ export default function App() {
           <TeacherDashboard
             questions={questions}
             onUpdateQuestions={handleUpdateQuestions}
+            currentUser={currentUser}
             onClose={() => setActiveModal('none')}
           />
         )}
@@ -518,11 +587,18 @@ export default function App() {
             Jejak Iman
           </span>
           <span className="text-[10px] text-amber-200/80 uppercase tracking-wider font-bold">
-            {gameMode === 'team' ? 'Mode Tim Kelas' : 'Mode Individu'}
+            {gameMode === 'team' ? 'Mode Tim' : 'Individu'}
           </span>
         </div>
 
         <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setActiveModal('student_auth')}
+            className="px-2 py-1 rounded-lg bg-teal-600 text-[10px] font-bold text-white shadow cursor-pointer truncate max-w-[85px]"
+          >
+            {currentUser ? (userProfile?.customName || 'Siswa') : 'Masuk'}
+          </button>
           <button
             type="button"
             onClick={() => setSettings((s) => ({ ...s, soundEnabled: !s.soundEnabled }))}
@@ -573,6 +649,10 @@ export default function App() {
               onOpenTeacher={() => setActiveModal('teacher_pin')}
               onOpenRules={() => setActiveModal('rules')}
               onOpenSettings={() => setActiveModal('settings')}
+              onOpenStudentAuth={() => setActiveModal('student_auth')}
+              onOpenStudentResults={() => setActiveModal('student_results')}
+              currentUser={currentUser}
+              userProfile={userProfile}
               isPlaying={true}
             />
           </div>
@@ -626,10 +706,32 @@ export default function App() {
       />
 
       {/* Active Modals */}
+      {activeModal === 'student_auth' && (
+        <StudentAuthModal
+          user={currentUser}
+          userProfile={userProfile}
+          onClose={() => setActiveModal('none')}
+          onOpenResults={() => setActiveModal('student_results')}
+          onRefreshProfile={refreshUserProfile}
+        />
+      )}
+
+      {activeModal === 'student_results' && currentUser && (
+        <StudentResultsModal
+          user={currentUser}
+          onClose={() => setActiveModal('none')}
+        />
+      )}
+
       {activeModal === 'question' && activeQuestionCtx && (
         <QuestionModal
           context={activeQuestionCtx}
           bonusStars={settings.bonusStarsOnQuestion}
+          studentUid={currentUser?.uid}
+          studentName={userProfile?.customName || currentUser?.displayName || currentPlayer?.name}
+          studentPhoto={currentUser?.photoURL || undefined}
+          studentEmail={currentUser?.email || undefined}
+          classroomId={userProfile?.classroomId || 'default_class'}
           onResolve={handleQuestionResolution}
         />
       )}
@@ -654,6 +756,7 @@ export default function App() {
         <TeacherDashboard
           questions={questions}
           onUpdateQuestions={handleUpdateQuestions}
+          currentUser={currentUser}
           onClose={() => setActiveModal('none')}
         />
       )}

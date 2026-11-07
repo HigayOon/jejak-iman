@@ -1,0 +1,90 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-\\.:@]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isTeacher() {
+      return isSignedIn() && (
+        request.auth.token.email == 'rambetvanessa@gmail.com' ||
+        (request.auth.token.email != null && exists(/databases/$(database)/documents/teachers/$(request.auth.token.email)))
+      );
+    }
+
+    // User Profiles
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isTeacher());
+      allow list: if isSignedIn() && (resource.data.uid == request.auth.uid || isTeacher());
+      allow create: if isSignedIn() && request.auth.uid == userId && isValidId(userId);
+      allow update: if isSignedIn() && (request.auth.uid == userId || isTeacher());
+    }
+
+    // Classrooms
+    match /classrooms/{classroomId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isTeacher() && isValidId(classroomId);
+      allow update: if isSignedIn() && (
+        isTeacher() ||
+        incoming().diff(existing()).affectedKeys().hasOnly(['studentCount', 'updatedAt'])
+      );
+      allow delete: if isSignedIn() && isTeacher();
+
+      match /members/{memberId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && (request.auth.uid == incoming().studentUid || isTeacher()) && isValidId(memberId);
+        allow update, delete: if isSignedIn() && (request.auth.uid == resource.data.studentUid || isTeacher());
+      }
+    }
+
+    // Essay Drafts - Strictly private to student
+    match /essayDrafts/{draftId} {
+      allow get: if isSignedIn() && resource.data.studentUid == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.studentUid == request.auth.uid;
+      allow create: if isSignedIn() && incoming().studentUid == request.auth.uid && isValidId(draftId);
+      allow update: if isSignedIn() && incoming().studentUid == request.auth.uid && existing().studentUid == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.studentUid == request.auth.uid;
+    }
+
+    // Essay Submissions - Student writes, teacher grades & publishes
+    match /essaySubmissions/{submissionId} {
+      allow get: if isSignedIn() && (
+        resource.data.studentUid == request.auth.uid ||
+        isTeacher()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.studentUid == request.auth.uid ||
+        isTeacher()
+      );
+      allow create: if isSignedIn() &&
+        incoming().studentUid == request.auth.uid &&
+        incoming().status == 'PENDING' &&
+        isValidId(submissionId);
+      allow update: if isSignedIn() && isTeacher();
+      allow delete: if isSignedIn() && isTeacher();
+    }
+
+    // Teacher Whitelist
+    match /teachers/{email} {
+      allow read: if isSignedIn();
+      allow write: if isTeacher();
+    }
+  }
+}

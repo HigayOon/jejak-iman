@@ -1,0 +1,136 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile in Jejak Iman",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "maxLength": 150 },
+        "photoURL": { "type": "string", "maxLength": 500 },
+        "customName": { "type": "string", "maxLength": 60 },
+        "customAvatar": { "type": "string", "maxLength": 100 },
+        "role": { "type": "string", "enum": ["student", "teacher", "admin"] },
+        "classroomId": { "type": "string", "maxLength": 64 },
+        "teamId": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "displayName", "email"]
+    },
+    "Classroom": {
+      "title": "Classroom",
+      "description": "Virtual classroom for student groups",
+      "type": "object",
+      "properties": {
+        "classroomId": { "type": "string", "maxLength": 64 },
+        "name": { "type": "string", "maxLength": 100 },
+        "code": { "type": "string", "maxLength": 16 },
+        "teacherUid": { "type": "string", "maxLength": 128 },
+        "teacherEmail": { "type": "string", "maxLength": 150 },
+        "maxCapacity": { "type": "number" },
+        "studentCount": { "type": "number" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["classroomId", "name", "code", "teacherUid"]
+    },
+    "ClassMember": {
+      "title": "ClassMember",
+      "description": "Student membership record in a classroom",
+      "type": "object",
+      "properties": {
+        "memberId": { "type": "string", "maxLength": 128 },
+        "classroomId": { "type": "string", "maxLength": 64 },
+        "studentUid": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 100 },
+        "studentEmail": { "type": "string", "maxLength": 150 },
+        "studentPhoto": { "type": "string", "maxLength": 500 },
+        "customAvatar": { "type": "string", "maxLength": 100 },
+        "teamId": { "type": "string", "maxLength": 64 },
+        "joinedAt": { "type": "string" }
+      },
+      "required": ["memberId", "classroomId", "studentUid", "studentName"]
+    },
+    "EssayDraft": {
+      "title": "EssayDraft",
+      "description": "Draft response to an essay question",
+      "type": "object",
+      "properties": {
+        "draftId": { "type": "string", "maxLength": 128 },
+        "studentUid": { "type": "string", "maxLength": 128 },
+        "questionId": { "type": "string", "maxLength": 64 },
+        "classroomId": { "type": "string", "maxLength": 64 },
+        "sessionId": { "type": "string", "maxLength": 64 },
+        "answerText": { "type": "string", "maxLength": 10000 },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["draftId", "studentUid", "questionId", "answerText"]
+    },
+    "EssaySubmission": {
+      "title": "EssaySubmission",
+      "description": "Submitted student essay answer for teacher evaluation",
+      "type": "object",
+      "properties": {
+        "submissionId": { "type": "string", "maxLength": 128 },
+        "studentUid": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 100 },
+        "studentPhoto": { "type": "string", "maxLength": 500 },
+        "studentEmail": { "type": "string", "maxLength": 150 },
+        "classroomId": { "type": "string", "maxLength": 64 },
+        "teamId": { "type": "string", "maxLength": 64 },
+        "sessionId": { "type": "string", "maxLength": 64 },
+        "questionId": { "type": "string", "maxLength": 64 },
+        "questionTitle": { "type": "string", "maxLength": 200 },
+        "questionTextSnapshot": { "type": "string", "maxLength": 2000 },
+        "answerText": { "type": "string", "maxLength": 10000 },
+        "submittedAt": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "REVIEWED"] },
+        "score": { "type": "number" },
+        "teacherFeedback": { "type": "string", "maxLength": 3000 },
+        "published": { "type": "boolean" },
+        "reviewedAt": { "type": "string" },
+        "reviewedBy": { "type": "string", "maxLength": 128 }
+      },
+      "required": ["submissionId", "studentUid", "studentName", "questionId", "answerText", "status"]
+    },
+    "TeacherAuth": {
+      "title": "TeacherAuth",
+      "description": "Authorized teacher email record",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "maxLength": 150 },
+        "authorizedAt": { "type": "string" }
+      },
+      "required": ["email"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profiles for authenticated students and teachers"
+    },
+    "/classrooms/{classroomId}": {
+      "schema": "Classroom",
+      "description": "Classrooms created by teachers"
+    },
+    "/classrooms/{classroomId}/members/{memberId}": {
+      "schema": "ClassMember",
+      "description": "Student members in a classroom"
+    },
+    "/essayDrafts/{draftId}": {
+      "schema": "EssayDraft",
+      "description": "Student essay draft answers"
+    },
+    "/essaySubmissions/{submissionId}": {
+      "schema": "EssaySubmission",
+      "description": "Submitted essay answers for assessment"
+    },
+    "/teachers/{email}": {
+      "schema": "TeacherAuth",
+      "description": "Whitelist of teacher Google email addresses"
+    }
+  }
+}

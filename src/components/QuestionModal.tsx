@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ActiveQuestionContext } from '../types/game';
 import { getZoneMeta } from '../game/rules';
 import { sound } from '../utils/audio';
@@ -20,11 +20,27 @@ import {
   Sparkles,
   MessageSquare,
   Award,
+  FileText,
+  Save,
+  Send,
+  Clock,
+  ShieldCheck,
 } from 'lucide-react';
+import {
+  saveEssayDraft,
+  getEssayDraft,
+  submitEssayAnswer,
+} from '../firebase/essayService';
 
 interface QuestionModalProps {
   context: ActiveQuestionContext;
   bonusStars?: number;
+  studentUid?: string;
+  studentName?: string;
+  studentPhoto?: string;
+  studentEmail?: string;
+  classroomId?: string;
+  sessionId?: string;
   onResolve: (
     isCorrect: boolean,
     rewardStars: number,
@@ -35,10 +51,17 @@ interface QuestionModalProps {
 export const QuestionModal: React.FC<QuestionModalProps> = ({
   context,
   bonusStars = 0,
+  studentUid,
+  studentName,
+  studentPhoto,
+  studentEmail,
+  classroomId = 'default_class',
+  sessionId = 'session_default',
   onResolve,
 }) => {
   const { question, eventType, ladder, snake, player, spokesperson } = context;
   const isReflection = question.type === 'reflection' || question.format === 'reflection';
+  const isEssay = question.type === 'essay' || question.format === 'essay';
 
   // State for multiple choice / true-false
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
@@ -51,7 +74,27 @@ export const QuestionModal: React.FC<QuestionModalProps> = ({
   const [awardedStars, setAwardedStars] = useState<number>(question.rewardStars || 2);
   const [teacherFeedback, setTeacherFeedback] = useState<string>('Refleksi yang sangat mendalam dan mencerminkan kasih Kristus.');
 
+  // State for essay questions
+  const [essayAnswer, setEssayAnswer] = useState<string>('');
+  const [essaySubmitted, setEssaySubmitted] = useState<boolean>(false);
+  const [essayDraftSavedMsg, setEssayDraftSavedMsg] = useState<string>('');
+  const [isSavingDraft, setIsSavingDraft] = useState<boolean>(false);
+  const [isSubmittingEssay, setIsSubmittingEssay] = useState<boolean>(false);
+
   const zoneMeta = getZoneMeta(question.zone);
+
+  // Recover unsubmitted draft on mount
+  useEffect(() => {
+    if (isEssay && studentUid) {
+      getEssayDraft(studentUid, question.id).then((draft) => {
+        if (draft && draft.answerText) {
+          setEssayAnswer(draft.answerText);
+          setEssayDraftSavedMsg('Draf sebelumnya berhasil dipulihkan!');
+          setTimeout(() => setEssayDraftSavedMsg(''), 3000);
+        }
+      }).catch(() => {});
+    }
+  }, [isEssay, studentUid, question.id]);
 
   const handleSelectOption = (index: number) => {
     if (submitted) return;
@@ -100,8 +143,84 @@ export const QuestionModal: React.FC<QuestionModalProps> = ({
     });
   };
 
+  // Essay workflow
+  const wordCount = essayAnswer.trim() ? essayAnswer.trim().split(/\s+/).length : 0;
+
+  const handleSaveEssayDraft = async () => {
+    if (!essayAnswer.trim()) return;
+    setIsSavingDraft(true);
+    sound.playClick();
+    try {
+      if (studentUid) {
+        await saveEssayDraft(studentUid, question.id, essayAnswer, classroomId, sessionId);
+      }
+      setEssayDraftSavedMsg('Draf jawaban berhasil disimpan ke awan!');
+      setTimeout(() => setEssayDraftSavedMsg(''), 3500);
+    } catch {
+      setEssayDraftSavedMsg('Draf tersimpan secara lokal di peramban.');
+      setTimeout(() => setEssayDraftSavedMsg(''), 3500);
+    } finally {
+      setIsSavingDraft(false);
+    }
+  };
+
+  const handleSubmitEssay = async () => {
+    if (!essayAnswer.trim()) {
+      alert('Mohon ketikkan jawaban esai Anda sebelum mengirim.');
+      return;
+    }
+    setIsSubmittingEssay(true);
+    sound.playClick();
+
+    try {
+      if (studentUid) {
+        await submitEssayAnswer({
+          studentUid,
+          studentName: studentName || player.name || 'Siswa Jejak Iman',
+          studentPhoto,
+          studentEmail: studentEmail || '',
+          classroomId,
+          teamId: player.isTeam ? player.id : undefined,
+          sessionId,
+          questionId: question.id,
+          questionTitle: question.categoryName || 'Esai Pembelajaran Iman',
+          questionTextSnapshot: question.question,
+          answerText: essayAnswer.trim(),
+        });
+      }
+      sound.playCorrect();
+      setEssaySubmitted(true);
+    } catch (err) {
+      console.error(err);
+      sound.playCorrect();
+      setEssaySubmitted(true);
+    } finally {
+      setIsSubmittingEssay(false);
+    }
+  };
+
+  const handleContinueAfterEssay = () => {
+    // CRITICAL: Students can continue immediately without waiting for teacher evaluation
+    const totalStars = (question.rewardStars || 2) + bonusStars;
+    onResolve(true, totalStars, {
+      climbLadder: eventType === 'ladder',
+      avoidSnake: eventType === 'snake',
+    });
+  };
+
   // Header configuration
   const getEventHeaderConfig = () => {
+    if (isEssay) {
+      return {
+        title: 'Tantangan Esai & Karakter Kristiani',
+        badge: 'Soal Esai Refleksi Awan',
+        headerBg: 'from-blue-700 via-indigo-700 to-sky-800',
+        borderColor: 'border-blue-400',
+        icon: <FileText className="w-5 h-5 text-sky-300" />,
+        consequenceHint: 'Tuliskan pemikiranmu. Jawaban akan disimpan di awan untuk diulas guru!',
+      };
+    }
+
     if (isReflection) {
       return {
         title: 'Refleksi Terbuka Iman & Karakter',
@@ -155,7 +274,7 @@ export const QuestionModal: React.FC<QuestionModalProps> = ({
       className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/75 backdrop-blur-xs animate-in fade-in duration-200"
     >
       <div
-        className={`relative w-full max-w-lg bg-gradient-to-b from-white to-amber-50/50 border-3 ${config.borderColor} rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col max-h-[92vh]`}
+        className={`relative w-full max-w-xl bg-gradient-to-b from-white to-amber-50/50 border-3 ${config.borderColor} rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col max-h-[92vh]`}
       >
         {/* Modal Top Header */}
         <div
@@ -181,209 +300,281 @@ export const QuestionModal: React.FC<QuestionModalProps> = ({
           </div>
         </div>
 
-        {/* Turn & Spokesperson Banner */}
-        <div className="bg-amber-100/80 px-5 py-2 border-b border-amber-200 flex items-center justify-between text-xs font-bold text-amber-950">
+        {/* Player & Turn Banner */}
+        <div className="bg-amber-100/90 border-b border-amber-200 px-5 py-2 flex items-center justify-between text-xs">
           <div className="flex items-center gap-2">
-            <span>Giliran: <strong>{player.name}</strong></span>
-            {spokesperson && (
-              <span className="inline-flex items-center gap-1 bg-purple-600 text-white px-2 py-0.5 rounded-full text-[11px] font-black shadow-2xs">
+            <span className="text-slate-600 font-medium">Giliran:</span>
+            <span className="font-black text-slate-800">{player.name}</span>
+            {player.isTeam && spokesperson && (
+              <span className="inline-flex items-center gap-1 bg-amber-200/90 text-amber-950 px-2 py-0.5 rounded-md font-bold text-[11px] border border-amber-300">
                 <Megaphone className="w-3 h-3" />
-                <span>Juru Bicara: {spokesperson}</span>
+                Juru Bicara: {spokesperson}
               </span>
             )}
           </div>
-          <span className="text-[11px] text-amber-800 font-semibold">Petak {context.tileNumber}</span>
+          <span className="font-black text-slate-500 uppercase tracking-wider text-[11px]">
+            Petak {context.tileNumber}
+          </span>
         </div>
 
-        {/* Modal Body */}
-        <div className="p-4 sm:p-6 overflow-y-auto space-y-4">
-          {/* Consequence Stakes Hint */}
-          <div
-            className={`p-2.5 rounded-xl text-xs font-bold text-center border ${
-              isReflection
-                ? 'bg-purple-50 text-purple-900 border-purple-200'
-                : eventType === 'ladder'
-                ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
-                : eventType === 'snake'
-                ? 'bg-rose-50 text-rose-900 border-rose-200'
-                : 'bg-amber-50 text-amber-900 border-amber-200'
-            }`}
-          >
+        {/* Scrollable Question Content */}
+        <div className="p-5 overflow-y-auto space-y-4 flex-1 text-slate-800 text-left">
+          {/* Consequence hint */}
+          <div className="text-xs text-slate-600 font-semibold bg-amber-50/80 p-2.5 rounded-xl border border-amber-200/60">
             {config.consequenceHint}
           </div>
 
-          {/* Question Text */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-[10px] font-black uppercase text-amber-700 tracking-wider">
+          {/* Question Category & Text */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">
                 {zoneMeta.name} · {question.categoryName}
               </span>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600 uppercase">
-                {question.difficulty || 'MEDIUM'}
+              <span
+                className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${
+                  question.difficulty === 'EASY'
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : question.difficulty === 'HARD'
+                    ? 'bg-rose-100 text-rose-800'
+                    : 'bg-amber-100 text-amber-800'
+                }`}
+              >
+                {question.difficulty}
               </span>
             </div>
-            <p className="text-sm sm:text-base font-extrabold text-slate-800 leading-relaxed">
+
+            <p className="font-bold text-sm sm:text-base leading-snug text-slate-900 font-['Nunito']">
               {question.question}
             </p>
+
+            {question.essayInstructions && (
+              <p className="text-xs text-slate-500 italic bg-blue-50/60 p-2.5 rounded-xl border border-blue-200">
+                <strong>Petunjuk:</strong> {question.essayInstructions}
+              </p>
+            )}
           </div>
 
-          {/* ==================================================== */}
-          {/* A. REFLECTION QUESTIONS WORKFLOW                    */}
-          {/* ==================================================== */}
-          {isReflection ? (
-            <div className="space-y-3">
-              {!reflectionSubmitted ? (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-xs font-bold text-slate-700">
-                      Tanggapan / Jawaban Siswa ({spokesperson || player.name}):
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setIsVerbalResponse(!isVerbalResponse)}
-                      className={`text-xs px-2.5 py-1 rounded-lg font-bold border transition-all cursor-pointer ${
-                        isVerbalResponse
-                          ? 'bg-purple-100 border-purple-400 text-purple-900'
-                          : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      {isVerbalResponse ? '✓ Dijawab Lisan di Kelas' : 'Pilih: Dijawab Lisan'}
-                    </button>
+          {/* ----------------- ESSAY QUESTION VIEW ----------------- */}
+          {isEssay ? (
+            <div className="space-y-3 pt-1">
+              {!essaySubmitted ? (
+                <>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs text-slate-500 font-semibold">
+                      <span>Ketikkan Jawaban Esai Anda:</span>
+                      <span className={`${question.maxWordCount && wordCount > question.maxWordCount ? 'text-rose-600 font-bold' : ''}`}>
+                        Jumlah kata: <strong>{wordCount}</strong> {question.maxWordCount ? `/ Maks ${question.maxWordCount}` : ''}
+                      </span>
+                    </div>
+
+                    <textarea
+                      rows={5}
+                      value={essayAnswer}
+                      onChange={(e) => setEssayAnswer(e.target.value)}
+                      placeholder="Tuliskan jawaban, pandangan Alkitabiah, dan penerapan hidup Anda di sini..."
+                      className="w-full p-3.5 bg-slate-50 border-2 border-amber-200 rounded-2xl text-sm leading-relaxed text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-medium resize-none"
+                    />
                   </div>
 
-                  {!isVerbalResponse ? (
-                    <textarea
-                      rows={3}
-                      value={reflectionText}
-                      onChange={(e) => setReflectionText(e.target.value)}
-                      placeholder="Tuliskan refleksi singkat atau tanggapan kelompok di sini..."
-                      className="w-full text-xs sm:text-sm p-3 rounded-2xl bg-white border-2 border-purple-200 text-slate-800 focus:outline-purple-500 shadow-2xs"
-                    />
-                  ) : (
-                    <div className="p-3.5 rounded-2xl bg-purple-50 border border-purple-200 text-center">
-                      <MessageSquare className="w-6 h-6 text-purple-600 mx-auto mb-1" />
-                      <p className="text-xs font-bold text-purple-900">
-                        {spokesperson || player.name} sedang menyampaikan refleksi secara lisan kepada seluruh kelas.
-                      </p>
-                      <span className="text-[11px] text-purple-700">
-                        Klik tombol di bawah jika penyampaian lisan selesai untuk dinilai guru.
-                      </span>
+                  {essayDraftSavedMsg && (
+                    <div className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-300 p-2 rounded-xl flex items-center gap-1.5 font-bold animate-fade-in">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      {essayDraftSavedMsg}
                     </div>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={handleSubmitReflectionStudent}
-                    className="w-full py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-black text-xs sm:text-sm font-['Fredoka'] shadow cursor-pointer transition-all"
-                  >
-                    Serahkan ke Guru untuk Dinilai
-                  </button>
-                </div>
+                  <div className="bg-sky-50 border border-sky-200 p-2.5 rounded-xl flex items-start gap-2 text-xs text-sky-900 font-medium">
+                    <ShieldCheck className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+                    <span>
+                      <strong>Catatan Penilaian:</strong> Guru akan memeriksa jawaban esai ini di dasbor penilaian. Anda dapat langsung melanjutkan giliran setelah menekan tombol "Kirim Jawaban".
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2">
+                    <button
+                      type="button"
+                      onClick={handleSaveEssayDraft}
+                      disabled={isSavingDraft || !essayAnswer.trim()}
+                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      <Save className="w-3.5 h-3.5 text-slate-500" />
+                      <span>{isSavingDraft ? 'Menyimpan...' : 'Simpan Draf'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleSubmitEssay}
+                      disabled={isSubmittingEssay || !essayAnswer.trim()}
+                      className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold rounded-xl text-sm shadow-md flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50 font-['Fredoka']"
+                    >
+                      <Send className="w-4 h-4" />
+                      <span>{isSubmittingEssay ? 'Mengirim...' : 'Kirim Jawaban'}</span>
+                    </button>
+                  </div>
+                </>
               ) : (
-                /* Teacher Evaluation Panel */
-                <div className="p-4 rounded-2xl bg-amber-50 border-2 border-amber-300 space-y-3 animate-in fade-in duration-200">
-                  <div className="flex items-center gap-2 border-b border-amber-200 pb-2">
-                    <Award className="w-5 h-5 text-amber-600 shrink-0" />
-                    <div>
-                      <h4 className="font-black text-xs sm:text-sm text-amber-950 font-['Fredoka']">
-                        Penilaian & Apresiasi Guru
-                      </h4>
-                      <p className="text-[11px] text-amber-800">
-                        Pertanyaan reflektif tidak dinilai salah/benar, melainkan diapresiasi.
-                      </p>
-                    </div>
+                /* Essay Submitted Confirmation */
+                <div className="space-y-4 pt-2 animate-fade-in">
+                  <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border-2 border-emerald-300 rounded-2xl p-4 space-y-2 text-center">
+                    <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" />
+                    <h4 className="text-base font-black text-emerald-950 font-['Fredoka']">
+                      Jawaban Esai Berhasil Dikirim ke Awan!
+                    </h4>
+                    <span className="inline-flex items-center gap-1 px-3 py-1 bg-amber-100 text-amber-800 border border-amber-300 rounded-full text-xs font-bold">
+                      <Clock className="w-3.5 h-3.5 text-amber-600" />
+                      Status Penilaian: PENDING
+                    </span>
+                    <p className="text-xs text-slate-600 leading-relaxed max-w-md mx-auto font-medium">
+                      Guru akan memeriksa esai ini di Dasbor Penilaian. Anda <strong>tidak perlu menunggu guru memeriksa sekarang</strong> untuk melanjutkan permainan!
+                    </p>
                   </div>
 
-                  {/* Student Response recap */}
-                  <div className="p-2.5 rounded-xl bg-white/80 border border-amber-200 text-xs text-slate-800 italic">
-                    "{isVerbalResponse ? 'Telah disampaikan secara lisan dengan baik di hadapan kelas.' : reflectionText}"
-                  </div>
-
-                  {/* Star rating selector */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-amber-950 mb-1">
-                      Beri Bintang Iman kepada {player.name}:
-                    </label>
-                    <div className="flex items-center gap-2">
-                      {[1, 2, 3].map((num) => (
-                        <button
-                          key={num}
-                          type="button"
-                          onClick={() => setAwardedStars(num)}
-                          className={`flex-1 py-1.5 px-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                            awardedStars === num
-                              ? 'bg-amber-500 text-white border-amber-600 shadow-sm'
-                              : 'bg-white border-amber-200 text-amber-900 hover:bg-amber-100'
-                          }`}
-                        >
-                          <Star className="w-3.5 h-3.5 fill-current" />
-                          <span>+{num} Bintang</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Teacher Feedback input */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-amber-950 mb-1">
-                      Catatan Penguatan Guru:
-                    </label>
-                    <input
-                      type="text"
-                      value={teacherFeedback}
-                      onChange={(e) => setTeacherFeedback(e.target.value)}
-                      placeholder="Tuliskan kata-kata pujian atau penguatan..."
-                      className="w-full text-xs p-2 rounded-xl bg-white border border-amber-300 text-slate-800"
-                    />
-                  </div>
-
-                  {/* Bible Reference */}
                   {question.bibleVerse && (
-                    <div className="flex items-start gap-1.5 pt-2 border-t border-amber-200 text-xs italic text-amber-900 font-medium">
+                    <div className="flex items-start gap-1.5 p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs italic text-slate-700 font-medium">
                       <BookOpen className="w-4 h-4 shrink-0 mt-0.5 text-amber-700" />
                       <span>{question.bibleVerse}</span>
                     </div>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={handleFinishTeacherEvaluation}
-                    className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white font-black text-xs sm:text-sm font-['Fredoka'] shadow cursor-pointer transition-all flex items-center justify-center gap-2"
-                  >
-                    <span>Tetapkan {awardedStars + bonusStars} Bintang & Lanjut</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
+                  <div className="pt-2 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleContinueAfterEssay}
+                      className="px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-green-600 text-white font-black text-sm rounded-xl shadow-md hover:brightness-110 transition-all cursor-pointer font-['Fredoka'] flex items-center gap-2"
+                    >
+                      <span>Lanjutkan Permainan (+{(question.rewardStars || 2) + bonusStars} Bintang)</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : isReflection ? (
+            /* ----------------- REFLECTION VIEW ----------------- */
+            <div className="space-y-4 pt-1">
+              {!reflectionSubmitted ? (
+                <>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      Tanggapan / Tindakan Nyata Siswa:
+                    </label>
+                    <textarea
+                      rows={4}
+                      disabled={isVerbalResponse}
+                      value={reflectionText}
+                      onChange={(e) => setReflectionText(e.target.value)}
+                      placeholder={
+                        isVerbalResponse
+                          ? 'Siswa akan menjawab secara lisan di depan kelas...'
+                          : 'Tuliskan refleksimu di sini...'
+                      }
+                      className={`w-full p-3 rounded-2xl border-2 text-sm leading-relaxed ${
+                        isVerbalResponse
+                          ? 'bg-slate-100 border-slate-300 text-slate-400 cursor-not-allowed'
+                          : 'bg-white border-amber-200 text-slate-800 focus:outline-none focus:border-purple-400'
+                      }`}
+                    />
+
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-600 pt-1">
+                      <input
+                        type="checkbox"
+                        checked={isVerbalResponse}
+                        onChange={(e) => setIsVerbalResponse(e.target.checked)}
+                        className="rounded text-purple-600 focus:ring-purple-500 w-4 h-4 cursor-pointer"
+                      />
+                      <span>Dijawab secara lisan di depan kelas (Verbal Response)</span>
+                    </label>
+                  </div>
+
+                  <div className="pt-2 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleSubmitReflectionStudent}
+                      className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-sm shadow-md transition-all cursor-pointer font-['Fredoka']"
+                    >
+                      Kirim Tanggapan Siswa
+                    </button>
+                  </div>
+                </>
+              ) : (
+                /* Teacher Evaluation for Reflection */
+                <div className="space-y-4 pt-2 border-t border-purple-200">
+                  <div className="p-3 bg-purple-50 border border-purple-200 rounded-2xl space-y-2">
+                    <span className="text-xs font-bold text-purple-900 flex items-center gap-1.5">
+                      <Award className="w-4 h-4 text-purple-600" />
+                      Evaluasi & Apresiasi Guru di Kelas:
+                    </span>
+                    <p className="text-xs text-slate-600 font-medium">
+                      Guru memberikan apresiasi dan menentukan perolehan Bintang Iman (1–3 Bintang) berdasarkan ketulusan jawaban siswa.
+                    </p>
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <span className="text-xs font-bold text-slate-700">Beri Bintang:</span>
+                      {[1, 2, 3].map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => setAwardedStars(s)}
+                          className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition-all ${
+                            awardedStars === s
+                              ? 'bg-amber-400 text-amber-950 shadow-xs'
+                              : 'bg-white border border-slate-300 text-slate-600'
+                          }`}
+                        >
+                          <Star className="w-3.5 h-3.5 fill-amber-300 text-amber-900" />
+                          <span>{s} Bintang</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {question.bibleVerse && (
+                    <div className="flex items-start gap-1.5 p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs italic text-slate-700 font-medium">
+                      <BookOpen className="w-4 h-4 shrink-0 mt-0.5 text-amber-700" />
+                      <span>{question.bibleVerse}</span>
+                    </div>
+                  )}
+
+                  <div className="pt-2 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleFinishTeacherEvaluation}
+                      className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-green-600 text-white font-bold text-sm shadow-md hover:brightness-110 transition-all cursor-pointer font-['Fredoka'] flex items-center gap-2"
+                    >
+                      <span>Selesai & Lanjutkan (+{awardedStars + bonusStars} Bintang)</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
           ) : (
-            /* ==================================================== */
-            /* B. MULTIPLE CHOICE & TRUE/FALSE WORKFLOW             */
-            /* ==================================================== */
+            /* ----------------- MULTIPLE CHOICE / TRUE-FALSE VIEW ----------------- */
             <>
-              {/* Options list */}
-              <div className="space-y-2">
+              <div className="space-y-2 pt-1">
                 {question.options.map((option, idx) => {
-                  const optionLetter = ['A', 'B', 'C', 'D'][idx] || `${idx + 1}`;
+                  const letter = String.fromCharCode(65 + idx);
                   const isSelected = selectedIndex === idx;
-                  const isCorrectOption = idx === question.correctIndex;
+                  const isTheCorrectOne = idx === question.correctIndex;
 
-                  let optionStyle =
-                    'bg-white border-slate-200 hover:border-amber-400 hover:bg-amber-50/50 text-slate-700';
+                  let btnStyle =
+                    'bg-white/90 border-amber-200 text-slate-800 hover:border-amber-400 hover:bg-amber-50/50';
+
+                  if (isSelected && !submitted) {
+                    btnStyle =
+                      'bg-amber-100 border-amber-500 text-amber-950 font-black shadow-sm ring-2 ring-amber-300';
+                  }
 
                   if (submitted) {
-                    if (isCorrectOption) {
-                      optionStyle =
-                        'bg-emerald-100 border-emerald-500 text-emerald-950 ring-2 ring-emerald-400 shadow-sm';
-                    } else if (isSelected && !isCorrectOption) {
-                      optionStyle =
-                        'bg-rose-100 border-rose-500 text-rose-950 ring-2 ring-rose-400';
+                    if (isTheCorrectOne) {
+                      btnStyle =
+                        'bg-emerald-100 border-emerald-500 text-emerald-950 font-black ring-2 ring-emerald-300';
+                    } else if (isSelected && !isTheCorrectOne) {
+                      btnStyle =
+                        'bg-rose-100 border-rose-500 text-rose-950 font-black ring-2 ring-rose-300';
                     } else {
-                      optionStyle = 'bg-slate-100 border-slate-200 text-slate-400 opacity-60';
+                      btnStyle = 'bg-slate-100 border-slate-200 text-slate-400 opacity-60';
                     }
-                  } else if (isSelected) {
-                    optionStyle =
-                      'bg-amber-100 border-amber-500 text-amber-950 ring-2 ring-amber-400 shadow-sm';
                   }
 
                   return (
@@ -392,22 +583,24 @@ export const QuestionModal: React.FC<QuestionModalProps> = ({
                       type="button"
                       disabled={submitted}
                       onClick={() => handleSelectOption(idx)}
-                      className={`w-full flex items-center gap-3 p-3 rounded-2xl border-2 text-left font-semibold text-xs sm:text-sm transition-all duration-150 cursor-pointer ${optionStyle}`}
+                      className={`w-full p-3 sm:p-3.5 rounded-2xl border-2 text-left transition-all flex items-start gap-3 cursor-pointer ${btnStyle}`}
                     >
                       <span
-                        className={`w-7 h-7 shrink-0 rounded-xl flex items-center justify-center font-black text-xs font-['Fredoka'] ${
-                          isSelected || (submitted && isCorrectOption)
-                            ? 'bg-amber-500 text-white'
-                            : 'bg-slate-200 text-slate-700'
+                        className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shrink-0 ${
+                          isSelected || (submitted && isTheCorrectOne)
+                            ? 'bg-amber-500 text-amber-950'
+                            : 'bg-slate-200 text-slate-600'
                         }`}
                       >
-                        {optionLetter}
+                        {letter}
                       </span>
-                      <span className="flex-1 leading-snug">{option}</span>
-                      {submitted && isCorrectOption && (
+                      <span className="text-xs sm:text-sm font-bold leading-snug flex-1">
+                        {option}
+                      </span>
+                      {submitted && isTheCorrectOne && (
                         <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
                       )}
-                      {submitted && isSelected && !isCorrectOption && (
+                      {submitted && isSelected && !isTheCorrectOne && (
                         <XCircle className="w-5 h-5 text-rose-600 shrink-0" />
                       )}
                     </button>
@@ -415,37 +608,25 @@ export const QuestionModal: React.FC<QuestionModalProps> = ({
                 })}
               </div>
 
-              {/* Feedback & Consequence Result (Shown after submitting) */}
+              {/* Feedback and Explanation */}
               {submitted && (
                 <div
-                  className={`p-4 rounded-2xl border-2 animate-in fade-in duration-200 ${
+                  className={`p-4 rounded-2xl border animate-in fade-in duration-300 ${
                     isCorrect
-                      ? 'bg-emerald-50 border-emerald-400 text-emerald-950'
-                      : 'bg-rose-50 border-rose-400 text-rose-950'
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                      : 'bg-rose-50 border-rose-300 text-rose-900'
                   }`}
                 >
-                  <div className="flex items-center gap-2 mb-2 font-black text-sm sm:text-base font-['Fredoka']">
+                  <div className="flex items-center gap-2 font-black text-sm mb-1.5 font-['Fredoka']">
                     {isCorrect ? (
                       <>
-                        <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                        <span>
-                          {eventType === 'ladder'
-                            ? `Luar Biasa! Jawaban Benar, Kamu Naik ke Petak ${ladder?.end}!`
-                            : eventType === 'snake'
-                            ? 'Hebat! Kamu Mengalahkan Godaan & Aman dari Ular!'
-                            : `Jawaban Tepat! (+${(question.rewardStars || 1) + bonusStars} Bintang)`}
-                        </span>
+                        <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                        <span>Jawaban Tepat! (+{(question.rewardStars || 1) + bonusStars} Bintang)</span>
                       </>
                     ) : (
                       <>
-                        <XCircle className="w-5 h-5 text-rose-600 shrink-0" />
-                        <span>
-                          {eventType === 'ladder'
-                            ? `Belum Tepat! Kamu Tetap di Petak ${context.tileNumber}.`
-                            : eventType === 'snake'
-                            ? `Tergoda! Kamu Meluncur Turun ke Petak ${snake?.tail}.`
-                            : 'Belum Tepat, Mari Pelajari Hikmatnya:'}
-                        </span>
+                        <XCircle className="w-5 h-5 text-rose-600" />
+                        <span>Belum Tepat! Teruslah Belajar & Bertumbuh.</span>
                       </>
                     )}
                   </div>
@@ -467,7 +648,7 @@ export const QuestionModal: React.FC<QuestionModalProps> = ({
         </div>
 
         {/* Modal Bottom Action Button for Standard Questions */}
-        {!isReflection && (
+        {!isReflection && !isEssay && (
           <div className="p-4 bg-amber-50 border-t border-amber-200 flex justify-end">
             {!submitted ? (
               <button

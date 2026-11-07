@@ -7,9 +7,9 @@ export type GameZone = 'rumah' | 'sekolah' | 'masyarakat' | 'menjadi_terang';
 
 export type GameMode = 'individual' | 'team';
 
-export type QuestionType = 'quiz' | 'ladder' | 'snake' | 'reflection';
+export type QuestionType = 'quiz' | 'ladder' | 'snake' | 'reflection' | 'essay';
 
-export type QuestionFormat = 'multiple_choice' | 'true_false' | 'reflection';
+export type QuestionFormat = 'multiple_choice' | 'true_false' | 'reflection' | 'essay';
 
 export type QuestionDifficulty = 'EASY' | 'MEDIUM' | 'HARD';
 
@@ -80,6 +80,9 @@ export interface Question {
   correctAnswer?: string; // 'A' | 'B' | 'C' | 'D' | 'TRUE' | 'FALSE' | 'NONE'
   explanation: string;
   bibleVerse: string;
+  essayInstructions?: string;
+  maxWordCount?: number;
+  submissionDeadline?: string;
   difficulty: QuestionDifficulty; // 'EASY' | 'MEDIUM' | 'HARD'
   enabled: boolean; // active/inactive in gameplay
   rewardStars: number;
@@ -114,7 +117,80 @@ export type ModalType =
   | 'settings'
   | 'question'
   | 'event'
-  | 'victory';
+  | 'victory'
+  | 'student_auth'
+  | 'student_results';
+
+export interface UserProfile {
+  uid: string;
+  displayName: string;
+  email: string;
+  photoURL?: string;
+  customName?: string;
+  customAvatar?: string;
+  role: 'student' | 'teacher';
+  classroomId?: string;
+  teamId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Classroom {
+  classroomId: string;
+  name: string;
+  code: string;
+  teacherUid: string;
+  teacherEmail: string;
+  maxCapacity: number; // 30
+  studentCount: number;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClassMember {
+  memberId: string;
+  classroomId: string;
+  studentUid: string;
+  studentName: string;
+  studentEmail: string;
+  studentPhoto?: string;
+  customAvatar?: string;
+  teamId?: string;
+  joinedAt: string;
+}
+
+export interface EssayDraft {
+  draftId: string;
+  studentUid: string;
+  questionId: string;
+  classroomId?: string;
+  sessionId?: string;
+  answerText: string;
+  updatedAt: string;
+}
+
+export interface EssaySubmission {
+  submissionId: string;
+  studentUid: string;
+  studentName: string;
+  studentPhoto?: string;
+  studentEmail: string;
+  classroomId: string;
+  teamId?: string;
+  sessionId?: string;
+  questionId: string;
+  questionTitle: string;
+  questionTextSnapshot: string;
+  answerText: string;
+  submittedAt: string;
+  status: 'PENDING' | 'REVIEWED';
+  score?: number | null;
+  teacherFeedback?: string;
+  published: boolean;
+  reviewedAt?: string;
+  reviewedBy?: string;
+}
 
 export interface GameSettings {
   soundEnabled: boolean;

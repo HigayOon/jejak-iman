@@ -7,14 +7,20 @@ import React, { useEffect } from 'react';
 import { TitleLogo } from './TitleLogo';
 import { CHARACTERS } from '../game/characters';
 import { CharacterAvatar } from './CharacterAvatar';
-import { Play, BookOpen, HelpCircle, Users, Sparkles } from 'lucide-react';
+import { Play, BookOpen, HelpCircle, Users, Award, LogIn, UserCheck } from 'lucide-react';
 import { sound } from '../utils/audio';
+import { User } from 'firebase/auth';
+import { UserProfile } from '../types/game';
 
 interface MainMenuProps {
   onStartGame: () => void;
   onOpenTeacher: () => void;
   onOpenRules: () => void;
   onOpenSetup: () => void;
+  onOpenStudentAuth?: () => void;
+  onOpenStudentResults?: () => void;
+  currentUser?: User | null;
+  userProfile?: UserProfile | null;
 }
 
 export const MainMenu: React.FC<MainMenuProps> = ({
@@ -22,6 +28,10 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   onOpenTeacher,
   onOpenRules,
   onOpenSetup,
+  onOpenStudentAuth,
+  onOpenStudentResults,
+  currentUser,
+  userProfile,
 }) => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -37,19 +47,59 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
   return (
     <div className="relative min-h-screen w-full flex flex-col items-center justify-between p-4 sm:p-8 overflow-hidden select-none bg-gradient-to-b from-slate-950/50 via-emerald-950/30 to-slate-950/60">
-      {/* Top ambient decor */}
-      <div className="w-full flex justify-between items-center max-w-5xl">
+      {/* Top ambient decor & Auth Status Bar */}
+      <div className="w-full flex flex-wrap justify-between items-center max-w-5xl gap-2 z-10">
         <span className="text-xs font-bold text-emerald-200/90 tracking-widest uppercase">
           Edisi Pendidikan Karakter Kristiani
         </span>
-        <button
-          type="button"
-          onClick={onOpenSetup}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white text-xs font-bold transition-all border border-white/30 backdrop-blur-sm cursor-pointer"
-        >
-          <Users className="w-3.5 h-3.5" />
-          <span>Atur Tim / Pemain</span>
-        </button>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Student Auth Button / Profile Badge */}
+          {onOpenStudentAuth && (
+            <button
+              type="button"
+              onClick={onOpenStudentAuth}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all border backdrop-blur-sm cursor-pointer shadow-sm ${
+                currentUser
+                  ? 'bg-emerald-600/90 hover:bg-emerald-500 text-white border-emerald-300'
+                  : 'bg-white/20 hover:bg-white/30 text-white border-white/30'
+              }`}
+            >
+              {currentUser?.photoURL ? (
+                <img src={currentUser.photoURL} alt="" className="w-4 h-4 rounded-full object-cover" />
+              ) : currentUser ? (
+                <UserCheck className="w-3.5 h-3.5 text-emerald-200" />
+              ) : (
+                <LogIn className="w-3.5 h-3.5 text-amber-300" />
+              )}
+              <span>
+                {currentUser ? (userProfile?.customName || currentUser.displayName || 'Profil Siswa') : 'Masuk Siswa (Google)'}
+              </span>
+            </button>
+          )}
+
+          {/* Student Results CTA (Visible when logged in) */}
+          {currentUser && onOpenStudentResults && (
+            <button
+              type="button"
+              onClick={onOpenStudentResults}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500 hover:bg-amber-400 text-amber-950 text-xs font-black transition-all border border-amber-300 backdrop-blur-sm cursor-pointer shadow-sm font-['Fredoka']"
+            >
+              <Award className="w-3.5 h-3.5 text-amber-950" />
+              <span>Hasil Belajar Saya</span>
+            </button>
+          )}
+
+          {/* Setup / Players */}
+          <button
+            type="button"
+            onClick={onOpenSetup}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white text-xs font-bold transition-all border border-white/30 backdrop-blur-sm cursor-pointer"
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>Atur Tim / Pemain</span>
+          </button>
+        </div>
       </div>
 
       {/* Hero Centerpiece: Title Plaque */}

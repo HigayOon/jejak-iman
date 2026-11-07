@@ -588,6 +588,47 @@ export const INITIAL_QUESTIONS: Question[] = [
     rewardStars: 3,
     updatedAt: 1715000000000,
   },
+  // ==========================================
+  // 4. CLOUD ESSAY QUESTIONS (In-depth reflection & delayed grading)
+  // ==========================================
+  {
+    id: 'smp-essay-1',
+    zone: 'sekolah',
+    type: 'essay',
+    format: 'essay',
+    categoryName: 'Persahabatan',
+    question: 'Bagaimana Anda sebagai remaja Kristen dapat menjadi teladan integritas ketika teman-teman di sekitar Anda terbiasa menyontek saat ujian?',
+    options: [],
+    correctIndex: -1,
+    correctAnswer: 'NONE',
+    explanation: 'Guru akan memeriksa jawaban esai ini di dasbor penilaian awan.',
+    essayInstructions: 'Tuliskan minimal 2 tindakan konkret yang berlandaskan kasih dan kejujuran tanpa menghakimi teman Anda.',
+    maxWordCount: 250,
+    bibleVerse: 'Amsal 11:3 - "Orang yang jujur dipimpin oleh ketulusannya, tetapi pengkhianat dirusak oleh kecurangannya."',
+    difficulty: 'MEDIUM',
+    enabled: true,
+    rewardStars: 3,
+    updatedAt: 1715000000000,
+  },
+  {
+    id: 'smp-essay-2',
+    zone: 'menjadi_terang',
+    type: 'essay',
+    format: 'essay',
+    categoryName: 'Iman dalam Tindakan',
+    question: 'Jelaskan bagaimana konsep "Menjadi Terang Dunia" (Matius 5:14) dapat diwujudkan melalui media sosial dan lingkungan pergaulan Anda sehari-hari!',
+    options: [],
+    correctIndex: -1,
+    correctAnswer: 'NONE',
+    explanation: 'Guru akan memeriksa jawaban esai ini di dasbor penilaian awan.',
+    essayInstructions: 'Uraikan tantangan yang Anda hadapi dan langkah nyata untuk membawa damai serta inspirasi bagi sesama.',
+    maxWordCount: 300,
+    bibleVerse: 'Matius 5:16 - "Demikianlah hendaknya terangmu bercahaya di depan orang, supaya mereka melihat perbuatanmu yang baik dan memuliakan Bapamu yang di sorga."',
+    difficulty: 'HARD',
+    enabled: true,
+    rewardStars: 3,
+    updatedAt: 1715000000000,
+  },
 ];
 
 const LOCAL_STORAGE_KEY = 'jejak_iman_custom_questions_v2';
@@ -688,9 +729,9 @@ export function getQuestionForEvent(
   const pool = activeQuestions.length > 0 ? activeQuestions : INITIAL_QUESTIONS;
 
   // Filter pool matching eventType
-  // For 'quiz' eventType on board, both 'quiz' and 'reflection' questions can qualify
+  // For 'quiz' eventType on board, 'quiz', 'reflection', and 'essay' questions can qualify
   let matchingType = pool.filter((q) => {
-    if (eventType === 'quiz') return q.type === 'quiz' || q.type === 'reflection';
+    if (eventType === 'quiz') return q.type === 'quiz' || q.type === 'reflection' || q.type === 'essay';
     return q.type === eventType;
   });
 

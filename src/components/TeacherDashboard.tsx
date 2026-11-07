@@ -11,7 +11,11 @@ import {
   QuestionFormat,
   QuestionDifficulty,
   QUESTION_CATEGORIES,
+  EssaySubmission,
+  Classroom,
+  ClassMember,
 } from '../types/game';
+import { User } from 'firebase/auth';
 import { getZoneMeta } from '../game/rules';
 import {
   exportQuestionsToCSV,
@@ -25,6 +29,18 @@ import {
   INITIAL_QUESTIONS,
   resetToDefaultQuestions,
 } from '../game/questionBank';
+import {
+  subscribeToClassroomSubmissions,
+  gradeSubmission,
+} from '../firebase/essayService';
+import {
+  createClassroom,
+  listTeacherClassrooms,
+  removeStudentFromClassroom,
+  subscribeToClassroomMembers,
+  toggleClassroomActive,
+} from '../firebase/classroomService';
+import { OWNER_TEACHER_EMAIL } from '../firebase/authService';
 import {
   BookOpen,
   Plus,
@@ -48,6 +64,14 @@ import {
   BarChart3,
   HelpCircle,
   ArrowUpRight,
+  School,
+  FileText,
+  Send,
+  MessageSquareQuote,
+  ShieldCheck,
+  Clock,
+  UserCheck,
+  UserX,
 } from 'lucide-react';
 import { sound } from '../utils/audio';
 
@@ -55,14 +79,16 @@ interface TeacherDashboardProps {
   questions: Question[];
   onUpdateQuestions: (newQuestions: Question[]) => void;
   onClose: () => void;
+  currentUser?: User | null;
 }
 
-type DashboardTab = 'questions' | 'stats' | 'pin_settings';
+type DashboardTab = 'questions' | 'assessments' | 'classrooms' | 'stats' | 'pin_settings';
 
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   questions,
   onUpdateQuestions,
   onClose,
+  currentUser,
 }) => {
   const [activeTab, setActiveTab] = useState<DashboardTab>('questions');
 
@@ -104,11 +130,59 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [importErrors, setImportErrors] = useState<{ row: number; error: string; rawText: string }[]>([]);
   const [importWarnings, setImportWarnings] = useState<{ row: number; warning: string }[]>([]);
 
+  // Form fields for essay
+  const [formEssayInstructions, setFormEssayInstructions] = useState<string>('');
+  const [formMaxWordCount, setFormMaxWordCount] = useState<number>(300);
+
+  // Submissions state
+  const [submissions, setSubmissions] = useState<EssaySubmission[]>([]);
+  const [activeReviewSubmission, setActiveReviewSubmission] = useState<EssaySubmission | null>(null);
+  const [reviewScore, setReviewScore] = useState<string>('');
+  const [reviewFeedback, setReviewFeedback] = useState<string>('');
+  const [reviewPublished, setReviewPublished] = useState<boolean>(true);
+  const [assessmentStatusFilter, setAssessmentStatusFilter] = useState<'all' | 'PENDING' | 'REVIEWED'>('all');
+  const [assessmentSearch, setAssessmentSearch] = useState<string>('');
+
+  // Classrooms state
+  const [classrooms, setClassrooms] = useState<Classroom[]>([]);
+  const [selectedClassId, setSelectedClassId] = useState<string>('');
+  const [classroomMembers, setClassroomMembers] = useState<ClassMember[]>([]);
+  const [newClassName, setNewClassName] = useState<string>('');
+  const [isCreatingClass, setIsCreatingClass] = useState<boolean>(false);
+
   // PIN settings state
   const [currentPin, setCurrentPin] = useState<string>(getStoredTeacherPin());
   const [newPin, setNewPin] = useState<string>('');
   const [confirmPin, setConfirmPin] = useState<string>('');
   const [pinFeedback, setPinFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Firestore Subscriptions
+  React.useEffect(() => {
+    const unsub = subscribeToClassroomSubmissions(undefined, (list) => {
+      setSubmissions(list);
+    });
+    return () => unsub();
+  }, []);
+
+  React.useEffect(() => {
+    if (currentUser?.uid) {
+      listTeacherClassrooms(currentUser.uid).then((list) => {
+        setClassrooms(list || []);
+        if (list && list.length > 0 && !selectedClassId) {
+          setSelectedClassId(list[0].classroomId);
+        }
+      }).catch(() => {});
+    }
+  }, [currentUser?.uid]);
+
+  React.useEffect(() => {
+    if (selectedClassId) {
+      const unsub = subscribeToClassroomMembers(selectedClassId, (members) => {
+        setClassroomMembers(members);
+      });
+      return () => unsub();
+    }
+  }, [selectedClassId]);
 
   // Filtered Questions calculation
   const filteredQuestions = useMemo(() => {
@@ -255,7 +329,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
   const buildQuestionFromForm = (id: string): Question => {
     let options: string[] = [];
-    if (formType === 'reflection' || formFormat === 'reflection') {
+    const isNoOptions =
+      formType === 'reflection' ||
+      formFormat === 'reflection' ||
+      formType === 'essay' ||
+      formFormat === 'essay';
+
+    if (isNoOptions) {
       options = [];
     } else if (formFormat === 'true_false') {
       options = ['Benar', 'Salah'];
@@ -275,17 +355,20 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       optionB: formFormat === 'multiple_choice' ? formOptB.trim() : formFormat === 'true_false' ? 'Salah' : '',
       optionC: formFormat === 'multiple_choice' ? formOptC.trim() : '',
       optionD: formFormat === 'multiple_choice' ? formOptD.trim() : '',
-      correctIndex: formType === 'reflection' || formFormat === 'reflection' ? -1 : formCorrectIndex,
-      correctAnswer:
-        formType === 'reflection' || formFormat === 'reflection'
-          ? 'NONE'
-          : formFormat === 'true_false'
-          ? formCorrectIndex === 0
-            ? 'TRUE'
-            : 'FALSE'
-          : ['A', 'B', 'C', 'D'][formCorrectIndex] || 'A',
+      correctIndex: isNoOptions ? -1 : formCorrectIndex,
+      correctAnswer: isNoOptions
+        ? 'NONE'
+        : formFormat === 'true_false'
+        ? formCorrectIndex === 0
+          ? 'TRUE'
+          : 'FALSE'
+        : ['A', 'B', 'C', 'D'][formCorrectIndex] || 'A',
       explanation: formExplanation.trim() || 'Mari pelajari firman Tuhan ini dengan sungguh-sungguh.',
       bibleVerse: formBibleVerse.trim() || 'Amsal 3:5-6',
+      essayInstructions:
+        formType === 'essay' || formFormat === 'essay' ? formEssayInstructions.trim() : undefined,
+      maxWordCount:
+        formType === 'essay' || formFormat === 'essay' ? formMaxWordCount : undefined,
       difficulty: formDifficulty,
       enabled: formEnabled,
       rewardStars: formRewardStars || 2,
@@ -457,6 +540,38 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     }
   };
 
+  const [isSavingReview, setIsSavingReview] = useState<boolean>(false);
+
+  const handleSaveReview = async (publish: boolean) => {
+    if (!activeReviewSubmission) return;
+    const numScore = reviewScore.trim() === '' ? undefined : Number(reviewScore);
+    if (numScore !== undefined && (isNaN(numScore) || numScore < 0 || numScore > 100)) {
+      alert('Nilai harus berupa angka antara 0 sampai 100.');
+      return;
+    }
+
+    setIsSavingReview(true);
+    try {
+      await gradeSubmission(
+        activeReviewSubmission.submissionId,
+        currentUser?.uid || 'teacher-local',
+        {
+          score: numScore,
+          teacherFeedback: reviewFeedback.trim(),
+          published: publish,
+        }
+      );
+      sound.playCorrect();
+      setActiveReviewSubmission(null);
+      alert(publish ? 'Nilai dan ulasan berhasil diterbitkan ke siswa!' : 'Draf ulasan berhasil disimpan secara privat.');
+    } catch (err: any) {
+      console.error(err);
+      alert('Gagal menyimpan penilaian: ' + (err?.message || 'Terjadi kesalahan'));
+    } finally {
+      setIsSavingReview(false);
+    }
+  };
+
   return (
     <div
       role="dialog"
@@ -506,6 +621,35 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             >
               <BookOpen className="w-3.5 h-3.5" />
               <span>Daftar Soal ({questions.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('assessments')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'assessments'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-white text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Penilaian Jawaban Siswa</span>
+              {submissions.filter(s => s.status === 'PENDING').length > 0 && (
+                <span className="px-1.5 py-0.2 bg-amber-400 text-amber-950 rounded-full text-[10px] font-black animate-pulse">
+                  {submissions.filter(s => s.status === 'PENDING').length}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('classrooms')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'classrooms'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-white text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              <School className="w-3.5 h-3.5" />
+              <span>Kelas Awan ({classrooms.length})</span>
             </button>
             <button
               type="button"
@@ -720,6 +864,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                           const t = e.target.value as QuestionType;
                           setFormType(t);
                           if (t === 'reflection') setFormFormat('reflection');
+                          if (t === 'essay') setFormFormat('essay');
                         }}
                         className="w-full text-xs p-2 rounded-xl bg-white border border-slate-300 font-bold text-slate-800"
                       >
@@ -727,6 +872,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                         <option value="ladder">🪜 Tantangan Tangga</option>
                         <option value="snake">🐍 Ujian Moral (Ular)</option>
                         <option value="reflection">✨ Refleksi Terbuka</option>
+                        <option value="essay">📝 Soal Esai Awan</option>
                       </select>
                     </div>
 
@@ -734,12 +880,18 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                       <label className="block text-[11px] font-bold text-slate-700 mb-1">Format Soal</label>
                       <select
                         value={formFormat}
-                        onChange={(e) => setFormFormat(e.target.value as QuestionFormat)}
+                        onChange={(e) => {
+                          const f = e.target.value as QuestionFormat;
+                          setFormFormat(f);
+                          if (f === 'essay') setFormType('essay');
+                          if (f === 'reflection') setFormType('reflection');
+                        }}
                         className="w-full text-xs p-2 rounded-xl bg-white border border-slate-300 font-bold text-slate-800"
                       >
                         <option value="multiple_choice">Pilihan Ganda (4 Opsi)</option>
                         <option value="true_false">Benar / Salah (2 Opsi)</option>
                         <option value="reflection">Refleksi Terbuka (Subjektif)</option>
+                        <option value="essay">Esai Refleksi Awan</option>
                       </select>
                     </div>
 
@@ -883,6 +1035,43 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   {formFormat === 'reflection' && (
                     <div className="p-3 rounded-xl bg-purple-50/80 border border-purple-200 text-xs text-purple-900 font-medium">
                       Pertanyaan refleksi bersifat terbuka (open-ended). Siswa dapat menjawab lisan atau tulisan, dan guru memberikan penilaian Bintang Iman secara manual di dalam permainan.
+                    </div>
+                  )}
+
+                  {(formFormat === 'essay' || formType === 'essay') && (
+                    <div className="space-y-2 p-3.5 rounded-xl bg-blue-50/80 border border-blue-200 text-xs">
+                      <div className="flex items-center gap-1.5 text-blue-900 font-bold">
+                        <FileText className="w-4 h-4 text-blue-600" />
+                        <span>Pengaturan Khusus Soal Esai Awan:</span>
+                      </div>
+                      <p className="text-slate-600 font-medium">
+                        Jawaban esai siswa akan disimpan ke Cloud Firestore dengan status PENDING. Guru dapat memeriksa dan memberikan nilai di tab "Penilaian Jawaban Siswa".
+                      </p>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          Petunjuk Esai untuk Siswa (Opsional):
+                        </label>
+                        <input
+                          type="text"
+                          value={formEssayInstructions}
+                          onChange={(e) => setFormEssayInstructions(e.target.value)}
+                          placeholder="Contoh: Berikan minimal 2 contoh tindakan nyata..."
+                          className="w-full text-xs p-2 rounded-xl bg-white border border-slate-300 text-slate-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          Batas Maksimal Kata (Opsional):
+                        </label>
+                        <input
+                          type="number"
+                          min={50}
+                          max={1000}
+                          value={formMaxWordCount}
+                          onChange={(e) => setFormMaxWordCount(Number(e.target.value))}
+                          className="w-36 text-xs p-2 rounded-xl bg-white border border-slate-300 text-slate-800 font-bold"
+                        />
+                      </div>
                     </div>
                   )}
 
@@ -1087,6 +1276,371 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 })
               )}
             </div>
+          </div>
+        )}
+
+        {/* ==================================================== */}
+        {/* TAB: PENILAIAN JAWABAN SISWA (FEATURE 5)             */}
+        {/* ==================================================== */}
+        {activeTab === 'assessments' && (
+          <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-5 text-slate-800 text-left">
+            {/* Header info */}
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-2xl border border-blue-200">
+              <div>
+                <h3 className="text-base font-black text-blue-950 font-['Fredoka'] flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-blue-600" />
+                  Dasbor Penilaian Jawaban Esai Siswa
+                </h3>
+                <p className="text-xs text-slate-600 font-medium">
+                  Periksa jawaban esai siswa dari Cloud Firestore, berikan ulasan tertulis dan nilai Bintang Iman.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-600">
+                  Guru: <strong className="text-blue-900">{currentUser?.email || OWNER_TEACHER_EMAIL}</strong>
+                </span>
+              </div>
+            </div>
+
+            {/* Assessment KPIs */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-3.5 rounded-2xl bg-blue-50 border border-blue-200">
+                <span className="text-[11px] font-bold text-blue-800 block">Total Soal Esai di Bank</span>
+                <strong className="text-2xl font-black text-blue-950 font-['Fredoka']">
+                  {questions.filter(q => q.type === 'essay' || q.format === 'essay').length}
+                </strong>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-indigo-50 border border-indigo-200">
+                <span className="text-[11px] font-bold text-indigo-800 block">Total Jawaban Masuk</span>
+                <strong className="text-2xl font-black text-indigo-950 font-['Fredoka']">
+                  {submissions.length}
+                </strong>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-300">
+                <span className="text-[11px] font-bold text-amber-800 block">Menunggu Penilaian (PENDING)</span>
+                <strong className="text-2xl font-black text-amber-950 font-['Fredoka']">
+                  {submissions.filter(s => s.status === 'PENDING').length}
+                </strong>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200">
+                <span className="text-[11px] font-bold text-emerald-800 block">Sudah Diulas (REVIEWED)</span>
+                <strong className="text-2xl font-black text-emerald-950 font-['Fredoka']">
+                  {submissions.filter(s => s.status === 'REVIEWED').length}
+                </strong>
+              </div>
+            </div>
+
+            {/* Filter Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-200">
+              <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                <Search className="w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  value={assessmentSearch}
+                  onChange={(e) => setAssessmentSearch(e.target.value)}
+                  placeholder="Cari nama siswa atau pertanyaan..."
+                  className="w-full text-xs bg-transparent border-none outline-none font-medium text-slate-800"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-500">Status:</span>
+                <select
+                  value={assessmentStatusFilter}
+                  onChange={(e) => setAssessmentStatusFilter(e.target.value as any)}
+                  className="text-xs p-1.5 rounded-xl bg-white border border-slate-300 font-bold text-slate-700"
+                >
+                  <option value="all">Semua Status ({submissions.length})</option>
+                  <option value="PENDING">Menunggu Penilaian ({submissions.filter(s => s.status === 'PENDING').length})</option>
+                  <option value="REVIEWED">Sudah Diulas ({submissions.filter(s => s.status === 'REVIEWED').length})</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Submissions List */}
+            <div className="space-y-3">
+              {submissions.filter(s => {
+                const matchStatus = assessmentStatusFilter === 'all' || s.status === assessmentStatusFilter;
+                const matchSearch =
+                  assessmentSearch.trim() === '' ||
+                  s.studentName.toLowerCase().includes(assessmentSearch.toLowerCase()) ||
+                  s.questionTextSnapshot.toLowerCase().includes(assessmentSearch.toLowerCase()) ||
+                  s.answerText.toLowerCase().includes(assessmentSearch.toLowerCase());
+                return matchStatus && matchSearch;
+              }).length === 0 ? (
+                <div className="py-12 text-center text-slate-400 space-y-2 bg-slate-50 rounded-2xl border border-dashed border-slate-300">
+                  <FileText className="w-10 h-10 text-slate-300 mx-auto" />
+                  <p className="text-sm font-bold text-slate-600">Belum Ada Jawaban Esai Sesuai Filter</p>
+                  <p className="text-xs text-slate-400">
+                    Siswa yang menjawab soal esai selama permainan akan otomatis tersimpan di sini.
+                  </p>
+                </div>
+              ) : (
+                submissions.filter(s => {
+                  const matchStatus = assessmentStatusFilter === 'all' || s.status === assessmentStatusFilter;
+                  const matchSearch =
+                    assessmentSearch.trim() === '' ||
+                    s.studentName.toLowerCase().includes(assessmentSearch.toLowerCase()) ||
+                    s.questionTextSnapshot.toLowerCase().includes(assessmentSearch.toLowerCase()) ||
+                    s.answerText.toLowerCase().includes(assessmentSearch.toLowerCase());
+                  return matchStatus && matchSearch;
+                }).map((sub) => {
+                  const dateStr = new Date(sub.submittedAt).toLocaleDateString('id-ID', {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  });
+
+                  return (
+                    <div
+                      key={sub.submissionId}
+                      className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-3 hover:border-blue-300 transition-all text-left"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                        <div className="flex items-center gap-2.5">
+                          {sub.studentPhoto ? (
+                            <img src={sub.studentPhoto} alt="" className="w-8 h-8 rounded-full object-cover border border-amber-300" />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-800 font-bold flex items-center justify-center text-xs">
+                              {(sub.studentName || 'S')[0]}
+                            </div>
+                          )}
+                          <div>
+                            <span className="font-bold text-sm text-slate-900 block leading-tight">
+                              {sub.studentName}
+                            </span>
+                            <span className="text-[11px] text-slate-400 flex items-center gap-1 font-medium">
+                              <Clock className="w-3 h-3" /> {dateStr}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {sub.status === 'REVIEWED' ? (
+                            <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                              <CheckCircle2 className="w-3.5 h-3.5" /> Sudah Diulas
+                              {sub.published ? ' (Terbit)' : ' (Draf Ulasan)'}
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
+                              <Clock className="w-3.5 h-3.5 animate-pulse" /> Menunggu Penilaian
+                            </span>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveReviewSubmission(sub);
+                              setReviewScore(typeof sub.score === 'number' ? String(sub.score) : '');
+                              setReviewFeedback(sub.teacherFeedback || '');
+                              setReviewPublished(sub.published ?? true);
+                            }}
+                            className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            <span>{sub.status === 'REVIEWED' ? 'Edit Nilai & Ulasan' : 'Beri Nilai & Ulasan'}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Question snapshot */}
+                      <div className="text-xs text-slate-600 italic bg-amber-50/70 p-2.5 rounded-xl border border-amber-200">
+                        "{sub.questionTextSnapshot}"
+                      </div>
+
+                      {/* Student answer text */}
+                      <div className="space-y-1">
+                        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                          Jawaban Lengkap Siswa:
+                        </span>
+                        <p className="text-xs sm:text-sm text-slate-800 bg-slate-50 p-3 rounded-xl border border-slate-200 whitespace-pre-wrap leading-relaxed font-medium">
+                          {sub.answerText}
+                        </p>
+                      </div>
+
+                      {/* Teacher notes if reviewed */}
+                      {sub.status === 'REVIEWED' && (
+                        <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 flex items-start justify-between text-xs">
+                          <div>
+                            <span className="font-bold text-emerald-900 block">Ulasan Guru:</span>
+                            <p className="text-emerald-950 font-medium">{sub.teacherFeedback || '(Tanpa ulasan tertulis)'}</p>
+                          </div>
+                          {typeof sub.score === 'number' && (
+                            <span className="font-black px-2.5 py-1 bg-emerald-600 text-white rounded-lg ml-2 shrink-0">
+                              Nilai: {sub.score} / 100
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ==================================================== */}
+        {/* TAB: KELAS AWAN (FEATURE 3)                          */}
+        {/* ==================================================== */}
+        {activeTab === 'classrooms' && (
+          <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-5 text-slate-800 text-left">
+            {/* Teacher Security Authorization Banner */}
+            <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-300 rounded-2xl p-4 flex items-start gap-3">
+              <ShieldCheck className="w-6 h-6 text-emerald-600 shrink-0 mt-0.5" />
+              <div>
+                <h4 className="font-bold text-sm text-emerald-950 font-['Fredoka']">
+                  Otorisasi Guru Cloud Firestore & Firebase Auth
+                </h4>
+                <p className="text-xs text-emerald-800 leading-relaxed font-medium mt-0.5">
+                  Akun Guru Terverifikasi: <strong>{OWNER_TEACHER_EMAIL}</strong>. Hak akses guru divalidasi langsung oleh Firebase Security Rules sisi server, ditambah PIN keamanan 4-digit sebagai proteksi ganda di ruang kelas.
+                </p>
+              </div>
+            </div>
+
+            {/* Create Classroom Form */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+              <h4 className="font-black text-sm text-slate-800 flex items-center gap-2 font-['Fredoka']">
+                <School className="w-4 h-4 text-emerald-600" />
+                Buat Ruang Kelas Baru
+              </h4>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!newClassName.trim() || !currentUser) return;
+                  setIsCreatingClass(true);
+                  try {
+                    const c = await createClassroom(newClassName.trim(), currentUser);
+                    setClassrooms(prev => [c, ...prev]);
+                    setSelectedClassId(c.classroomId);
+                    setNewClassName('');
+                    alert(`Kelas "${c.name}" berhasil dibuat dengan Kode Gabung: ${c.code}`);
+                  } catch (err: any) {
+                    alert('Gagal membuat kelas: ' + err.message);
+                  } finally {
+                    setIsCreatingClass(false);
+                  }
+                }}
+                className="flex gap-2"
+              >
+                <input
+                  type="text"
+                  required
+                  value={newClassName}
+                  onChange={(e) => setNewClassName(e.target.value)}
+                  placeholder="Contoh: Kelas 8A - Agama Kristen"
+                  className="flex-1 px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-800"
+                />
+                <button
+                  type="submit"
+                  disabled={isCreatingClass || !newClassName.trim()}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-xs cursor-pointer disabled:opacity-50 font-['Fredoka'] flex items-center gap-1.5"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>{isCreatingClass ? 'Membuat...' : 'Buat Kelas & Hasilkan Kode'}</span>
+                </button>
+              </form>
+            </div>
+
+            {/* Classroom Roster & Details */}
+            {classrooms.length > 0 && (
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-600">Pilih Kelas:</span>
+                    <select
+                      value={selectedClassId}
+                      onChange={(e) => setSelectedClassId(e.target.value)}
+                      className="text-xs p-2 rounded-xl bg-white border border-slate-300 font-bold text-slate-800"
+                    >
+                      {classrooms.map(c => (
+                        <option key={c.classroomId} value={c.classroomId}>
+                          {c.name} (Kode: {c.code}) - {c.studentCount || 0}/30 Siswa
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {selectedClassId && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-slate-600">Kode Gabung Siswa:</span>
+                      <span className="px-3 py-1 bg-amber-400 text-amber-950 font-black rounded-xl text-sm font-mono tracking-widest border border-amber-500">
+                        {classrooms.find(c => c.classroomId === selectedClassId)?.code}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Capacity & Member Roster Table */}
+                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+                  <div className="p-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                    <div>
+                      <h5 className="font-bold text-xs text-slate-800">
+                        Daftar Siswa Terdaftar (Maksimal 30 Siswa)
+                      </h5>
+                      <p className="text-[11px] text-slate-500 font-medium">
+                        Kapasitas saat ini: {classroomMembers.length} / 30 siswa
+                      </p>
+                    </div>
+                    <div className="w-32 bg-slate-200 h-2.5 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${classroomMembers.length >= 30 ? 'bg-rose-500' : 'bg-emerald-500'}`}
+                        style={{ width: `${Math.min(100, (classroomMembers.length / 30) * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {classroomMembers.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400 text-xs space-y-1">
+                      <School className="w-8 h-8 mx-auto text-slate-300" />
+                      <p className="font-bold text-slate-600">Belum ada siswa yang bergabung di kelas ini.</p>
+                      <p>Berikan kode 6-digit di atas kepada siswa untuk masuk menggunakan Google.</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto">
+                      {classroomMembers.map((m) => (
+                        <div key={m.memberId} className="p-3 flex items-center justify-between hover:bg-slate-50 text-xs">
+                          <div className="flex items-center gap-2.5">
+                            {m.studentPhoto ? (
+                              <img src={m.studentPhoto} alt="" className="w-7 h-7 rounded-full object-cover" />
+                            ) : (
+                              <div className="w-7 h-7 rounded-full bg-amber-200 text-amber-800 font-bold flex items-center justify-center text-[10px]">
+                                {m.studentName[0]}
+                              </div>
+                            )}
+                            <div>
+                              <span className="font-bold text-slate-900 block">{m.studentName}</span>
+                              <span className="text-[11px] text-slate-400">{m.studentEmail}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-slate-400">
+                              Gabung: {new Date(m.joinedAt).toLocaleDateString('id-ID')}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (confirm(`Keluarkan ${m.studentName} dari kelas?`)) {
+                                  await removeStudentFromClassroom(selectedClassId, m.studentUid);
+                                  setClassroomMembers(prev => prev.filter(x => x.studentUid !== m.studentUid));
+                                }
+                              }}
+                              className="p-1 rounded-lg hover:bg-red-50 text-red-600 transition-colors cursor-pointer"
+                              title="Keluarkan Siswa"
+                            >
+                              <UserX className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1477,6 +2031,148 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-xs cursor-pointer"
                 >
                   Ganti Semua (REPLACE)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================== */}
+      {/* REVIEW & GRADING MODAL FOR TEACHER                   */}
+      {/* ==================================================== */}
+      {activeReviewSubmission && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-70 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-xs animate-in zoom-in-95 duration-150"
+        >
+          <div className="relative w-full max-w-2xl bg-white border-3 border-blue-500 rounded-3xl p-5 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden space-y-4 text-left">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div className="flex items-center gap-2.5">
+                <span className="p-2 rounded-xl bg-blue-100 text-blue-700">
+                  <Edit3 className="w-5 h-5" />
+                </span>
+                <div>
+                  <h3 className="font-black text-base font-['Fredoka'] text-slate-900">
+                    Penilaian Jawaban Esai Siswa
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Siswa: <strong className="text-blue-700">{activeReviewSubmission.studentName}</strong> • Pertanyaan: {activeReviewSubmission.questionTitle || 'Esai Refleksi'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveReviewSubmission(null)}
+                className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Scrollable Body */}
+            <div className="flex-1 overflow-y-auto space-y-3.5 pr-1 text-xs">
+              {/* Question Snapshot */}
+              <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-slate-800">
+                <span className="font-bold text-amber-900 block text-[11px] mb-1">Pertanyaan / Kasus Moral:</span>
+                <p className="italic font-medium leading-relaxed">
+                  "{activeReviewSubmission.questionTextSnapshot}"
+                </p>
+              </div>
+
+              {/* Student Answer */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-700 block text-[11px]">Jawaban Siswa:</span>
+                  <span className="text-[10px] text-slate-500 font-medium">
+                    {activeReviewSubmission.answerText.trim().split(/\s+/).filter(Boolean).length} kata
+                  </span>
+                </div>
+                <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 text-slate-800 font-medium leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto text-xs sm:text-sm">
+                  {activeReviewSubmission.answerText}
+                </div>
+              </div>
+
+              {/* Score Input */}
+              <div className="p-3 bg-blue-50/70 rounded-2xl border border-blue-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label htmlFor="scoreInput" className="font-bold text-blue-950 text-xs flex items-center gap-1.5">
+                    <Star className="w-4 h-4 text-amber-500 fill-amber-400" />
+                    <span>Nilai Angka (0 - 100):</span>
+                  </label>
+                  <input
+                    id="scoreInput"
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={reviewScore}
+                    onChange={(e) => setReviewScore(e.target.value)}
+                    placeholder="Contoh: 90"
+                    className="w-28 px-3 py-1.5 rounded-xl border border-blue-300 bg-white font-black text-center text-sm text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <p className="text-[11px] text-blue-800 font-medium">
+                  Berikan nilai apresiasi berdasarkan kedalaman pemahaman, ketulusan refleksi kristiani, dan kesesuaian nilai moral.
+                </p>
+              </div>
+
+              {/* Feedback Textarea */}
+              <div className="space-y-1.5">
+                <label className="font-bold text-slate-700 block text-xs">
+                  Ulasan & Catatan Bimbingan Guru (Dapat Dibaca Siswa):
+                </label>
+                <textarea
+                  rows={3}
+                  value={reviewFeedback}
+                  onChange={(e) => setReviewFeedback(e.target.value)}
+                  placeholder="Contoh: Renungan yang sangat baik! Teruslah mempraktikkan kasih dan keberanian dalam pergaulan sehari-hari..."
+                  className="w-full p-3 rounded-2xl border border-slate-300 text-xs sm:text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Publish Checkbox */}
+              <label className="flex items-center gap-2.5 p-2.5 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={reviewPublished}
+                  onChange={(e) => setReviewPublished(e.target.checked)}
+                  className="w-4 h-4 accent-blue-600 rounded cursor-pointer"
+                />
+                <span className="font-bold text-slate-800 text-xs">
+                  Publikasikan ke Siswa (Siswa langsung dapat melihat nilai dan ulasan di menu "Hasil Pembelajaran Saya")
+                </span>
+              </label>
+            </div>
+
+            {/* Actions */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setActiveReviewSubmission(null)}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-xs font-bold hover:bg-slate-100 cursor-pointer"
+              >
+                Batal
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={isSavingReview}
+                  onClick={() => handleSaveReview(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold cursor-pointer disabled:opacity-50"
+                >
+                  Simpan Draf (Privat)
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingReview}
+                  onClick={() => handleSaveReview(reviewPublished)}
+                  className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{isSavingReview ? 'Menyimpan...' : 'Simpan & Konfirmasi'}</span>
                 </button>
               </div>
             </div>
