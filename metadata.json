@@ -1,0 +1,6 @@
+{
+  "name": "Jejak Iman: Faith Quest",
+  "description": "Game edukasi petualangan papan ular tangga Kristiani interaktif: Berjalan dalam Kasih, Bertumbuh dalam Hikmat.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
