@@ -29,11 +29,11 @@ export const TitleLogo: React.FC<TitleLogoProps> = ({ className = '', size = 'md
         {/* Title Text */}
         <div className="pt-2 sm:pt-2.5">
           <h1 className="text-2xl sm:text-3xl md:text-4xl font-black font-['Fredoka'] tracking-wider text-transparent bg-clip-text bg-gradient-to-b from-yellow-200 via-amber-300 to-yellow-500 drop-shadow-[0_2px_3px_rgba(0,0,0,0.8)] uppercase">
-            JEJAK IMAN
+            JEJAK IMAN by higayon
           </h1>
           <div className="inline-block px-3 py-0.5 rounded-full bg-amber-900/80 border border-amber-400/50 mt-0.5">
             <span className="text-[10px] sm:text-xs font-black tracking-widest text-amber-200 uppercase font-['Fredoka']">
-              FAITH QUEST
+              FAITH QUEST by Higayon
             </span>
           </div>
         </div>
