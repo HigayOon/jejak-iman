@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { Play, Users, BookOpen, HelpCircle, Settings, Award, LogIn, UserCheck } from 'lucide-react';
+import { Play, Users, BookOpen, HelpCircle, Settings, Award, LogIn, UserCheck, Wifi } from 'lucide-react';
 import { TitleLogo } from './TitleLogo';
 import { User } from 'firebase/auth';
 import { UserProfile } from '../types/game';
@@ -15,6 +15,7 @@ interface SidebarMenuProps {
   onOpenTeacher: () => void;
   onOpenRules: () => void;
   onOpenSettings: () => void;
+  onOpenMultiplayer?: () => void;
   onOpenStudentAuth?: () => void;
   onOpenStudentResults?: () => void;
   currentUser?: User | null;
@@ -28,6 +29,7 @@ export const SidebarMenu: React.FC<SidebarMenuProps> = ({
   onOpenTeacher,
   onOpenRules,
   onOpenSettings,
+  onOpenMultiplayer,
   onOpenStudentAuth,
   onOpenStudentResults,
   currentUser,
@@ -55,6 +57,25 @@ export const SidebarMenu: React.FC<SidebarMenuProps> = ({
             {isPlaying ? 'Lanjutkan Main' : 'Mulai Permainan'}
           </span>
         </button>
+
+        {/* Multiplayer Online */}
+        {onOpenMultiplayer && (
+          <button
+            type="button"
+            onClick={onOpenMultiplayer}
+            className="w-full p-2.5 sm:p-3 rounded-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 text-white font-black text-xs sm:text-sm font-['Fredoka'] border-2 border-indigo-300 shadow-[0_4px_0_0_#312e81,0_6px_12px_rgba(99,102,241,0.3)] hover:brightness-110 active:translate-y-1 transition-all flex items-center gap-3 cursor-pointer"
+          >
+            <span className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+              <Wifi className="w-4 h-4 text-amber-300 animate-pulse" />
+            </span>
+            <div className="flex flex-col text-left leading-tight">
+              <span>Multiplayer Online</span>
+              <span className="text-[10px] text-indigo-200 font-bold font-['Nunito']">
+                (Ruang Kelas Real-time)
+              </span>
+            </div>
+          </button>
+        )}
 
         {/* Masuk Google Siswa / Akun Saya */}
         {onOpenStudentAuth && (

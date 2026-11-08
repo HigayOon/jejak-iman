@@ -86,5 +86,39 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow write: if isTeacher();
     }
+
+    // Shared Multiplayer Game Rooms (Public game state)
+    match /gameRooms/{roomId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && (isTeacher() || incoming().hostTeacherUid == request.auth.uid) && isValidId(roomId);
+      allow update: if isSignedIn() && (
+        isTeacher() ||
+        existing().activePlayerUid == request.auth.uid ||
+        existing().hostTeacherUid == request.auth.uid
+      );
+      allow delete: if isSignedIn() && isTeacher();
+
+      // Connected Player Presence in room
+      match /players/{playerUid} {
+        allow read: if isSignedIn();
+        allow create, update: if isSignedIn() && (request.auth.uid == playerUid || isTeacher()) && isValidId(playerUid);
+        allow delete: if isSignedIn() && (request.auth.uid == playerUid || isTeacher());
+      }
+
+      // Private Question - STRICT PRIVACY: ONLY the assigned student and teacher can read
+      match /privateQuestions/{turnId} {
+        allow get: if isSignedIn() && (resource.data.studentUid == request.auth.uid || isTeacher());
+        allow list: if isSignedIn() && (resource.data.studentUid == request.auth.uid || isTeacher());
+        allow create: if isSignedIn() && (incoming().studentUid == request.auth.uid || isTeacher()) && isValidId(turnId);
+        allow update: if isSignedIn() && (resource.data.studentUid == request.auth.uid || isTeacher());
+        allow delete: if isSignedIn() && isTeacher();
+      }
+
+      // Turn Action Idempotency Log
+      match /turnActions/{actionId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && incoming().studentUid == request.auth.uid && isValidId(actionId);
+      }
+    }
   }
 }

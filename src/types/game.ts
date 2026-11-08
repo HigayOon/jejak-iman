@@ -58,6 +58,7 @@ export interface Player {
   isTeam: boolean;
   color: string;
   avatarSeed: string;
+  studentUid?: string; // Associated Google Auth UID for multiplayer
   // Classroom mode fields
   students?: string[]; // student roster in this team
   currentSpokespersonIndex?: number; // rotates each turn
@@ -219,3 +220,102 @@ export interface MoveEventDetails {
   toTile: number;
   starsDelta?: number;
 }
+
+export type TurnState =
+  | 'WAITING_ROLL'
+  | 'ROLLING'
+  | 'MOVING'
+  | 'ANSWERING_QUESTION'
+  | 'TURN_COMPLETED'
+  | 'GAME_OVER';
+
+export interface PublicQuestionStatus {
+  isAnswering: boolean;
+  studentUid: string;
+  studentName: string;
+  tileNumber: number;
+  questionType: QuestionType;
+}
+
+export interface GameRoom {
+  roomId: string;
+  classroomId: string;
+  roomCode: string;
+  title: string;
+  hostTeacherUid: string;
+  hostTeacherEmail: string;
+  status: 'lobby' | 'playing' | 'paused' | 'finished';
+  gameMode: GameMode;
+  turnId: string;
+  turnVersion: number;
+  currentTurnIndex: number;
+  activePlayerUid: string;
+  activePlayerName: string;
+  turnState: TurnState;
+  diceValue: number;
+  diceRolling: boolean;
+  isMoving: boolean;
+  highlightTile?: number | null;
+  publicQuestionStatus?: PublicQuestionStatus | null;
+  players: Player[];
+  winnerUid?: string | null;
+  winnerName?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GameRoomPlayerPresence {
+  playerUid: string;
+  playerName: string;
+  characterId: string;
+  customAvatar?: string;
+  photoURL?: string;
+  position: number;
+  stars: number;
+  isTeam: boolean;
+  teamId?: string;
+  teamName?: string;
+  orderIndex: number;
+  connectionStatus: 'online' | 'answering' | 'offline';
+  deviceId: string;
+  lastSeenAt: string;
+}
+
+export interface PrivateQuestion {
+  turnId: string;
+  roomId: string;
+  studentUid: string;
+  studentName: string;
+  questionId: string;
+  zone: GameZone;
+  type: QuestionType;
+  format?: QuestionFormat;
+  categoryName: string;
+  question: string;
+  options: string[];
+  explanation: string;
+  bibleVerse: string;
+  rewardStars: number;
+  status: 'ASSIGNED' | 'ANSWERED';
+  correctIndex?: number;
+  submittedAnswerIndex?: number | null;
+  submittedEssayText?: string | null;
+  isCorrect?: boolean | null;
+  ladderStart?: number;
+  ladderEnd?: number;
+  snakeHead?: number;
+  snakeTail?: number;
+  createdAt: string;
+  answeredAt?: string | null;
+}
+
+export interface TurnAction {
+  actionId: string;
+  roomId: string;
+  turnId: string;
+  studentUid: string;
+  actionType: 'ROLL_DICE' | 'SUBMIT_ANSWER' | 'SKIP_TURN';
+  payloadSummary?: string;
+  createdAt: string;
+}
+

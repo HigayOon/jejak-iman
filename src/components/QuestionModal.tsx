@@ -44,7 +44,9 @@ interface QuestionModalProps {
   onResolve: (
     isCorrect: boolean,
     rewardStars: number,
-    consequence: { climbLadder: boolean; avoidSnake: boolean }
+    consequence: { climbLadder: boolean; avoidSnake: boolean },
+    submittedAnswerIndex?: number | null,
+    submittedEssayText?: string
   ) => void;
 }
 
@@ -121,7 +123,7 @@ export const QuestionModal: React.FC<QuestionModalProps> = ({
     onResolve(isCorrect, totalStars, {
       climbLadder: isCorrect && eventType === 'ladder',
       avoidSnake: isCorrect && eventType === 'snake',
-    });
+    }, selectedIndex, undefined);
   };
 
   // Reflection workflow
@@ -140,7 +142,7 @@ export const QuestionModal: React.FC<QuestionModalProps> = ({
     onResolve(true, totalStars, {
       climbLadder: eventType === 'ladder',
       avoidSnake: eventType === 'snake',
-    });
+    }, null, reflectionText);
   };
 
   // Essay workflow
@@ -205,7 +207,7 @@ export const QuestionModal: React.FC<QuestionModalProps> = ({
     onResolve(true, totalStars, {
       climbLadder: eventType === 'ladder',
       avoidSnake: eventType === 'snake',
-    });
+    }, null, essayAnswer);
   };
 
   // Header configuration

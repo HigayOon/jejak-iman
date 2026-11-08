@@ -19,6 +19,9 @@ interface ScorePanelProps {
   onRollDice: () => void;
   onSelectPlayerTurn?: (index: number) => void;
   turnIndex: number;
+  isMultiplayer?: boolean;
+  isMyTurn?: boolean;
+  activeTurnPlayerName?: string;
 }
 
 export const ScorePanel: React.FC<ScorePanelProps> = ({
@@ -30,6 +33,9 @@ export const ScorePanel: React.FC<ScorePanelProps> = ({
   onRollDice,
   onSelectPlayerTurn,
   turnIndex,
+  isMultiplayer = false,
+  isMyTurn = true,
+  activeTurnPlayerName,
 }) => {
   const currentTotalStars = currentPlayer ? currentPlayer.stars : 0;
   const isTeamMode = currentPlayer?.isTeam;
@@ -147,15 +153,25 @@ export const ScorePanel: React.FC<ScorePanelProps> = ({
             type="button"
             data-start="true"
             onClick={onRollDice}
-            disabled={isRolling || isMoving}
-            className={`flex items-center gap-1.5 sm:gap-2 px-4 sm:px-5 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl font-black text-sm sm:text-base text-amber-950 font-['Fredoka'] tracking-wide transition-all duration-150 ${
-              isRolling || isMoving
-                ? 'opacity-60 cursor-not-allowed bg-amber-400'
-                : 'bg-gradient-to-b from-amber-300 via-orange-400 to-amber-500 shadow-[0_5px_0_0_#9a3412,0_8px_16px_rgba(249,115,22,0.4)] hover:brightness-110 active:translate-y-1 active:shadow-[0_2px_0_0_#9a3412] cursor-pointer'
+            disabled={isRolling || isMoving || (isMultiplayer && !isMyTurn)}
+            className={`flex items-center gap-1.5 sm:gap-2 px-4 sm:px-5 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl font-black text-sm sm:text-base font-['Fredoka'] tracking-wide transition-all duration-150 ${
+              isRolling || isMoving || (isMultiplayer && !isMyTurn)
+                ? 'opacity-60 cursor-not-allowed bg-slate-700 text-slate-300 border border-slate-600'
+                : 'bg-gradient-to-b from-amber-300 via-orange-400 to-amber-500 text-amber-950 shadow-[0_5px_0_0_#9a3412,0_8px_16px_rgba(249,115,22,0.4)] hover:brightness-110 active:translate-y-1 active:shadow-[0_2px_0_0_#9a3412] cursor-pointer ring-2 ring-amber-300/50 animate-pulse'
             }`}
           >
             <Dices className={`w-5 h-5 sm:w-6 sm:h-6 ${isRolling ? 'animate-spin' : ''}`} />
-            <span>{isRolling ? 'Mengocok...' : isMoving ? 'Berjalan...' : 'Lempar Dadu'}</span>
+            <span>
+              {isRolling
+                ? 'Mengocok...'
+                : isMoving
+                ? 'Berjalan...'
+                : isMultiplayer && !isMyTurn
+                ? `Menunggu (${activeTurnPlayerName || currentPlayer?.name})...`
+                : isMultiplayer && isMyTurn
+                ? 'Lempar Dadu (Giliran Anda!)'
+                : 'Lempar Dadu'}
+            </span>
           </button>
 
           {/* Bintang Iman (Faith Stars) Pill */}

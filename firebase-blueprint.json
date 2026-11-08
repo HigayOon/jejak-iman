@@ -105,6 +105,98 @@
         "authorizedAt": { "type": "string" }
       },
       "required": ["email"]
+    },
+    "GameRoom": {
+      "title": "GameRoom",
+      "description": "Shared real-time classroom multiplayer game session",
+      "type": "object",
+      "properties": {
+        "roomId": { "type": "string", "maxLength": 64 },
+        "classroomId": { "type": "string", "maxLength": 64 },
+        "roomCode": { "type": "string", "maxLength": 16 },
+        "title": { "type": "string", "maxLength": 100 },
+        "hostTeacherUid": { "type": "string", "maxLength": 128 },
+        "hostTeacherEmail": { "type": "string", "maxLength": 150 },
+        "status": { "type": "string", "enum": ["lobby", "playing", "paused", "finished"] },
+        "gameMode": { "type": "string", "enum": ["individual", "team"] },
+        "turnId": { "type": "string", "maxLength": 64 },
+        "turnVersion": { "type": "number" },
+        "currentTurnIndex": { "type": "number" },
+        "activePlayerUid": { "type": "string", "maxLength": 128 },
+        "activePlayerName": { "type": "string", "maxLength": 100 },
+        "turnState": { "type": "string", "enum": ["WAITING_ROLL", "ROLLING", "MOVING", "ANSWERING_QUESTION", "TURN_COMPLETED", "GAME_OVER"] },
+        "diceValue": { "type": "number" },
+        "diceRolling": { "type": "boolean" },
+        "highlightTile": { "type": "number" },
+        "winnerUid": { "type": "string", "maxLength": 128 },
+        "winnerName": { "type": "string", "maxLength": 100 },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["roomId", "classroomId", "roomCode", "hostTeacherUid", "status", "turnId", "activePlayerUid"]
+    },
+    "GameRoomPlayer": {
+      "title": "GameRoomPlayer",
+      "description": "Connected student or team token in a game room",
+      "type": "object",
+      "properties": {
+        "playerUid": { "type": "string", "maxLength": 128 },
+        "playerName": { "type": "string", "maxLength": 100 },
+        "characterId": { "type": "string", "maxLength": 64 },
+        "customAvatar": { "type": "string", "maxLength": 100 },
+        "photoURL": { "type": "string", "maxLength": 500 },
+        "position": { "type": "number" },
+        "stars": { "type": "number" },
+        "isTeam": { "type": "boolean" },
+        "teamId": { "type": "string", "maxLength": 64 },
+        "teamName": { "type": "string", "maxLength": 100 },
+        "orderIndex": { "type": "number" },
+        "connectionStatus": { "type": "string", "enum": ["online", "answering", "offline"] },
+        "deviceId": { "type": "string", "maxLength": 128 },
+        "lastSeenAt": { "type": "string" }
+      },
+      "required": ["playerUid", "playerName", "position", "stars", "connectionStatus"]
+    },
+    "PrivateQuestion": {
+      "title": "PrivateQuestion",
+      "description": "Private question assigned exclusively to the active student during their turn",
+      "type": "object",
+      "properties": {
+        "turnId": { "type": "string", "maxLength": 64 },
+        "roomId": { "type": "string", "maxLength": 64 },
+        "studentUid": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 100 },
+        "questionId": { "type": "string", "maxLength": 64 },
+        "zone": { "type": "string", "maxLength": 32 },
+        "type": { "type": "string", "maxLength": 32 },
+        "format": { "type": "string", "maxLength": 32 },
+        "categoryName": { "type": "string", "maxLength": 100 },
+        "question": { "type": "string", "maxLength": 2000 },
+        "explanation": { "type": "string", "maxLength": 2000 },
+        "bibleVerse": { "type": "string", "maxLength": 500 },
+        "rewardStars": { "type": "number" },
+        "status": { "type": "string", "enum": ["ASSIGNED", "ANSWERED"] },
+        "submittedAnswer": { "type": "string", "maxLength": 10000 },
+        "isCorrect": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "answeredAt": { "type": "string" }
+      },
+      "required": ["turnId", "roomId", "studentUid", "questionId", "question", "status"]
+    },
+    "TurnAction": {
+      "title": "TurnAction",
+      "description": "Idempotent turn action audit log preventing duplicate execution",
+      "type": "object",
+      "properties": {
+        "actionId": { "type": "string", "maxLength": 128 },
+        "roomId": { "type": "string", "maxLength": 64 },
+        "turnId": { "type": "string", "maxLength": 64 },
+        "studentUid": { "type": "string", "maxLength": 128 },
+        "actionType": { "type": "string", "enum": ["ROLL_DICE", "SUBMIT_ANSWER", "SKIP_TURN"] },
+        "payloadSummary": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["actionId", "roomId", "turnId", "studentUid", "actionType"]
     }
   },
   "firestore": {
@@ -131,6 +223,22 @@
     "/teachers/{email}": {
       "schema": "TeacherAuth",
       "description": "Whitelist of teacher Google email addresses"
+    },
+    "/gameRooms/{roomId}": {
+      "schema": "GameRoom",
+      "description": "Shared real-time classroom multiplayer game session"
+    },
+    "/gameRooms/{roomId}/players/{playerUid}": {
+      "schema": "GameRoomPlayer",
+      "description": "Connected student presence and player record in game room"
+    },
+    "/gameRooms/{roomId}/privateQuestions/{turnId}": {
+      "schema": "PrivateQuestion",
+      "description": "Private question assigned exclusively to active student and teacher"
+    },
+    "/gameRooms/{roomId}/turnActions/{actionId}": {
+      "schema": "TurnAction",
+      "description": "Idempotency action records"
     }
   }
 }

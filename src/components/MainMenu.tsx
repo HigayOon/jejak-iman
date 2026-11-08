@@ -7,7 +7,7 @@ import React, { useEffect } from 'react';
 import { TitleLogo } from './TitleLogo';
 import { CHARACTERS } from '../game/characters';
 import { CharacterAvatar } from './CharacterAvatar';
-import { Play, BookOpen, HelpCircle, Users, Award, LogIn, UserCheck } from 'lucide-react';
+import { Play, BookOpen, HelpCircle, Users, Award, LogIn, UserCheck, Wifi } from 'lucide-react';
 import { sound } from '../utils/audio';
 import { User } from 'firebase/auth';
 import { UserProfile } from '../types/game';
@@ -17,6 +17,7 @@ interface MainMenuProps {
   onOpenTeacher: () => void;
   onOpenRules: () => void;
   onOpenSetup: () => void;
+  onOpenMultiplayer?: () => void;
   onOpenStudentAuth?: () => void;
   onOpenStudentResults?: () => void;
   currentUser?: User | null;
@@ -28,6 +29,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   onOpenTeacher,
   onOpenRules,
   onOpenSetup,
+  onOpenMultiplayer,
   onOpenStudentAuth,
   onOpenStudentResults,
   currentUser,
@@ -87,6 +89,18 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             >
               <Award className="w-3.5 h-3.5 text-amber-950" />
               <span>Hasil Belajar Saya</span>
+            </button>
+          )}
+
+          {/* Multiplayer Online Header CTA */}
+          {onOpenMultiplayer && (
+            <button
+              type="button"
+              onClick={onOpenMultiplayer}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-600/90 hover:bg-indigo-500 text-white text-xs font-bold transition-all border border-indigo-300 backdrop-blur-sm cursor-pointer shadow-sm"
+            >
+              <Wifi className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+              <span>Multiplayer Online</span>
             </button>
           )}
 
@@ -151,6 +165,23 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             <span>Mode Guru</span>
           </button>
         </div>
+
+        {/* MULTIPLAYER ONLINE HERO BUTTON */}
+        {onOpenMultiplayer && (
+          <div className="w-full max-w-md mt-2.5">
+            <button
+              type="button"
+              onClick={() => {
+                sound.playClick();
+                onOpenMultiplayer();
+              }}
+              className="w-full py-2.5 px-4 rounded-2xl bg-gradient-to-r from-indigo-700 via-purple-700 to-indigo-800 text-white font-black text-sm font-['Fredoka'] border-2 border-indigo-300 shadow-[0_4px_0_0_#312e81,0_8px_16px_rgba(99,102,241,0.3)] hover:brightness-110 active:translate-y-1 transition-all flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Wifi className="w-4 h-4 text-amber-300 animate-pulse" />
+              <span>Main Bersama / Gabung Ruang Kelas (Online)</span>
+            </button>
+          </div>
+        )}
 
         {/* HOW TO PLAY CTA */}
         <div className="mt-3">
